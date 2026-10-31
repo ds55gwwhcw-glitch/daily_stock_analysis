@@ -1,0 +1,8 @@
+{
+  "checked_at": "2026-10-31",
+  "status": "CURRENT_LIST_OK",
+  "current_bse_count": 354,
+  "source": "AKShare stock_info_bj_name_code",
+  "historical_delisted_bse_complete": false,
+  "note": "BSE historical/delisted coverage must be completed before labeling the model 'full A-share'."
+}

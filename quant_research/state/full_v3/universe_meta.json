@@ -1,0 +1,10 @@
+{
+  "frozen_at": "2026-10-31",
+  "period_start": "2016-01-01",
+  "period_end": "2026-10-31",
+  "shsz_total": 5475,
+  "active": 5223,
+  "delisted": 252,
+  "source": "BaoStock query_stock_basic",
+  "scope": "SH/SZ only; BSE deliberately audited separately"
+}

@@ -1,0 +1,430 @@
+name: A-share Quant Data Parallel
+
+on:
+  push:
+    paths:
+      - ".github/workflows/quant-data-parallel.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "pilot = 120-stock validation; full = historical SH/SZ universe"
+        required: true
+        default: "pilot"
+        type: choice
+        options: [pilot, full]
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  START_DATE: "2016-01-01"
+  SHARD_COUNT: "8"
+
+jobs:
+  shard:
+    name: shard-${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    env:
+      MODE: ${{ github.event.inputs.mode || 'pilot' }}
+      SHARD: ${{ matrix.shard }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "baostock>=0.8.9" "pandas>=2.2" "numpy>=1.26" "pyarrow>=15"
+
+      - name: Restore shard cache
+        uses: actions/cache/restore@v4
+        with:
+          path: quant_research/cache/shard_${{ matrix.shard }}
+          key: ashare-v2-${{ env.MODE }}-shard-${{ matrix.shard }}-${{ github.run_id }}
+          restore-keys: |
+            ashare-v2-${{ env.MODE }}-shard-${{ matrix.shard }}-
+
+      - name: Build parallel downloader
+        run: |
+          mkdir -p quant_research/reports quant_research/cache/shard_${SHARD}
+          cat > quant_research/run_parallel_data.py <<'PY'
+          from __future__ import annotations
+          import json, os, signal, time
+          from dataclasses import asdict, dataclass
+          from datetime import date
+          from pathlib import Path
+
+          import baostock as bs
+          import numpy as np
+          import pandas as pd
+
+          MODE = os.getenv("MODE", "pilot")
+          SHARD = int(os.getenv("SHARD", "0"))
+          SHARD_COUNT = int(os.getenv("SHARD_COUNT", "8"))
+          START_DATE = os.getenv("START_DATE", "2016-01-01")
+          END_DATE = date.today().isoformat()
+
+          ROOT = Path("quant_research")
+          CACHE = ROOT / "cache" / f"shard_{SHARD}"
+          REPORTS = ROOT / "reports"
+          CACHE.mkdir(parents=True, exist_ok=True)
+          REPORTS.mkdir(parents=True, exist_ok=True)
+
+          FIELDS = (
+              "date,code,open,high,low,close,preclose,volume,amount,"
+              "adjustflag,turn,tradestatus,pctChg,isST"
+          )
+
+          class QueryTimeout(Exception):
+              pass
+
+          def alarm_handler(signum, frame):
+              raise QueryTimeout("query exceeded 45 seconds")
+
+          signal.signal(signal.SIGALRM, alarm_handler)
+
+          def login():
+              signal.alarm(20)
+              try:
+                  lg = bs.login()
+              finally:
+                  signal.alarm(0)
+              if lg.error_code != "0":
+                  raise RuntimeError(f"login {lg.error_code}: {lg.error_msg}")
+
+          def logout():
+              try:
+                  signal.alarm(10)
+                  bs.logout()
+              except Exception:
+                  pass
+              finally:
+                  signal.alarm(0)
+
+          def rs_to_df(rs):
+              rows = []
+              while rs.error_code == "0" and rs.next():
+                  rows.append(rs.get_row_data())
+              if rs.error_code != "0":
+                  raise RuntimeError(f"{rs.error_code}: {rs.error_msg}")
+              return pd.DataFrame(rows, columns=rs.fields)
+
+          def basic_universe():
+              signal.alarm(30)
+              try:
+                  df = rs_to_df(bs.query_stock_basic())
+              finally:
+                  signal.alarm(0)
+              stocks = df[df["type"].astype(str) == "1"].copy()
+              for c in ["ipoDate","outDate","status"]:
+                  stocks[c] = stocks[c].fillna("").astype(str)
+              stocks["ipo_dt"] = pd.to_datetime(stocks["ipoDate"], errors="coerce")
+              stocks["out_dt"] = pd.to_datetime(stocks["outDate"], errors="coerce")
+              s = pd.Timestamp(START_DATE)
+              e = pd.Timestamp(END_DATE)
+              stocks = stocks[
+                  (stocks["ipo_dt"].isna() | (stocks["ipo_dt"] <= e)) &
+                  (stocks["out_dt"].isna() | (stocks["out_dt"] >= s))
+              ].copy()
+              return stocks.sort_values(["status","ipo_dt","code"]).reset_index(drop=True)
+
+          def stratified(df, n):
+              if len(df) <= n:
+                  return df.copy()
+              df = df.sort_values(["ipo_dt","code"]).reset_index(drop=True)
+              idx = np.linspace(0, len(df)-1, n).round().astype(int)
+              return df.iloc[idx].drop_duplicates("code")
+
+          def pilot_universe(u):
+              active = stratified(u[u["status"] == "1"], 80)
+              dead = stratified(u[u["status"] == "0"], 40)
+              p = pd.concat([active, dead], ignore_index=True).drop_duplicates("code")
+              if len(p) < 120:
+                  rest = u[~u["code"].isin(p["code"])]
+                  p = pd.concat([p, stratified(rest, 120-len(p))], ignore_index=True)
+              return p.head(120)
+
+          def eff_start(row):
+              d = row["ipo_dt"]
+              return max(pd.Timestamp(START_DATE), d if pd.notna(d) else pd.Timestamp(START_DATE)).strftime("%Y-%m-%d")
+
+          def eff_end(row):
+              d = row["out_dt"]
+              return min(pd.Timestamp(END_DATE), d if pd.notna(d) else pd.Timestamp(END_DATE)).strftime("%Y-%m-%d")
+
+          def normalize(df):
+              if df.empty:
+                  return df
+              df = df.copy()
+              df["date"] = pd.to_datetime(df["date"], errors="coerce")
+              for c in ["open","high","low","close","preclose","volume","amount","turn","pctChg"]:
+                  df[c] = pd.to_numeric(df[c], errors="coerce")
+              return (df.dropna(subset=["date"])
+                        .drop_duplicates(["date","code"], keep="last")
+                        .sort_values("date")
+                        .reset_index(drop=True))
+
+          def fetch(code, start_s, end_s):
+              last = None
+              for attempt in range(3):
+                  try:
+                      signal.alarm(45)
+                      rs = bs.query_history_k_data_plus(
+                          code, FIELDS,
+                          start_date=start_s, end_date=end_s,
+                          frequency="d", adjustflag="2"
+                      )
+                      df = rs_to_df(rs)
+                      signal.alarm(0)
+                      return normalize(df)
+                  except Exception as e:
+                      signal.alarm(0)
+                      last = e
+                      logout()
+                      time.sleep(1 + attempt)
+                      login()
+              raise RuntimeError(str(last))
+
+          def qacheck(df):
+              if df.empty:
+                  return 0,0,0
+              dup = int(df["date"].duplicated().sum())
+              nonpos = int((df["close"].fillna(0) <= 0).sum())
+              high_ref = df[["open","close","low"]].max(axis=1)
+              low_ref = df[["open","close","high"]].min(axis=1)
+              bad = int(((df["high"] < high_ref) | (df["low"] > low_ref)).fillna(False).sum())
+              return dup, nonpos, bad
+
+          @dataclass
+          class Stat:
+              code: str
+              code_name: str
+              status: str
+              ipoDate: str
+              outDate: str
+              rows: int
+              min_date: str
+              max_date: str
+              duplicate_dates: int
+              nonpositive_close: int
+              bad_ohlc_rows: int
+              result: str
+              error: str = ""
+
+          def main():
+              t0 = time.time()
+              login()
+              try:
+                  u = basic_universe()
+                  selected = pilot_universe(u) if MODE == "pilot" else u
+                  selected = selected.reset_index(drop=True)
+                  mine = selected[selected.index % SHARD_COUNT == SHARD].copy()
+
+                  # shard 0 records universe snapshot for audit
+                  if SHARD == 0:
+                      u.drop(columns=["ipo_dt","out_dt"], errors="ignore").to_csv(
+                          REPORTS / f"universe_{MODE}.csv", index=False
+                      )
+
+                  stats = []
+                  for n, (_, row) in enumerate(mine.iterrows(), 1):
+                      code = row["code"]
+                      path = CACHE / f"{code.replace('.','_')}.parquet"
+                      try:
+                          if path.exists():
+                              df = normalize(pd.read_parquet(path))
+                              source = "cache"
+                          else:
+                              df = fetch(code, eff_start(row), eff_end(row))
+                              source = "baostock"
+                              if not df.empty:
+                                  df.to_parquet(path, index=False)
+
+                          dup, nonpos, bad = qacheck(df)
+                          stats.append(asdict(Stat(
+                              code, row["code_name"], row["status"],
+                              row["ipoDate"], row["outDate"], len(df),
+                              "" if df.empty else df["date"].min().strftime("%Y-%m-%d"),
+                              "" if df.empty else df["date"].max().strftime("%Y-%m-%d"),
+                              dup, nonpos, bad,
+                              "ok" if len(df) else "empty",
+                              "" if source else ""
+                          )))
+                      except Exception as e:
+                          stats.append(asdict(Stat(
+                              code, row["code_name"], row["status"],
+                              row["ipoDate"], row["outDate"], 0, "", "",
+                              0,0,0,"error",str(e)[:500]
+                          )))
+                      if n == 1 or n % 5 == 0 or n == len(mine):
+                          ok = sum(x["result"]=="ok" for x in stats)
+                          er = sum(x["result"]=="error" for x in stats)
+                          print(f"shard={SHARD} {n}/{len(mine)} ok={ok} error={er}", flush=True)
+
+                  m = pd.DataFrame(stats)
+                  m.to_csv(REPORTS / f"manifest_{MODE}_shard_{SHARD}.csv", index=False)
+                  summary = {
+                      "mode": MODE,
+                      "shard": SHARD,
+                      "shard_count": SHARD_COUNT,
+                      "selected_in_shard": len(mine),
+                      "fetch_ok": int((m["result"]=="ok").sum()) if len(m) else 0,
+                      "fetch_empty": int((m["result"]=="empty").sum()) if len(m) else 0,
+                      "fetch_error": int((m["result"]=="error").sum()) if len(m) else 0,
+                      "delisted_selected": int((mine["status"]=="0").sum()),
+                      "delisted_ok": int(((m["status"]=="0") & (m["result"]=="ok")).sum()) if len(m) else 0,
+                      "rows": int(m.loc[m["result"]=="ok","rows"].sum()) if len(m) else 0,
+                      "elapsed_seconds": round(time.time()-t0, 2)
+                  }
+                  (REPORTS / f"summary_{MODE}_shard_{SHARD}.json").write_text(
+                      json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+                  )
+                  print(json.dumps(summary, ensure_ascii=False), flush=True)
+              finally:
+                  logout()
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+      - name: Run shard
+        run: python quant_research/run_parallel_data.py
+
+      - name: Save shard cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: quant_research/cache/shard_${{ matrix.shard }}
+          key: ashare-v2-${{ env.MODE }}-shard-${{ matrix.shard }}-${{ github.run_id }}
+
+      - name: Upload shard reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-${{ env.MODE }}-shard-${{ matrix.shard }}
+          path: |
+            quant_research/reports/manifest_${{ env.MODE }}_shard_${{ matrix.shard }}.csv
+            quant_research/reports/summary_${{ env.MODE }}_shard_${{ matrix.shard }}.json
+            quant_research/reports/universe_${{ env.MODE }}.csv
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    name: aggregate-quality-gate
+    runs-on: ubuntu-latest
+    needs: shard
+    if: always()
+    env:
+      MODE: ${{ github.event.inputs.mode || 'pilot' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: data-${{ env.MODE }}-shard-*
+          path: shard_artifacts
+          merge-multiple: true
+
+      - name: Aggregate quality gate
+        run: |
+          python - <<'PY'
+          import glob, json, os
+          from pathlib import Path
+          import pandas as pd
+
+          mode = os.getenv("MODE", "pilot")
+          reports = Path("quant_research/reports")
+          reports.mkdir(parents=True, exist_ok=True)
+
+          files = sorted(glob.glob(f"shard_artifacts/manifest_{mode}_shard_*.csv"))
+          if not files:
+              raise SystemExit("No shard manifests found")
+
+          frames = [pd.read_csv(f) for f in files]
+          m = pd.concat(frames, ignore_index=True)
+          m.to_csv(reports / f"manifest_{mode}_parallel.csv", index=False)
+
+          summaries = []
+          for f in sorted(glob.glob(f"shard_artifacts/summary_{mode}_shard_*.json")):
+              summaries.append(json.loads(Path(f).read_text(encoding="utf-8")))
+
+          selected = len(m)
+          ok = int((m["result"]=="ok").sum())
+          errors = int((m["result"]=="error").sum())
+          empty = int((m["result"]=="empty").sum())
+          dead_selected = int((m["status"].astype(str)=="0").sum())
+          dead_ok = int(((m["status"].astype(str)=="0") & (m["result"]=="ok")).sum())
+          total_rows = int(m.loc[m["result"]=="ok","rows"].sum())
+          bad = int(m.loc[m["result"]=="ok","bad_ohlc_rows"].sum())
+          dup = int(m.loc[m["result"]=="ok","duplicate_dates"].sum())
+          nonpos = int(m.loc[m["result"]=="ok","nonpositive_close"].sum())
+
+          if mode == "pilot":
+              passed = (
+                  selected >= 110 and
+                  ok >= 100 and
+                  dead_ok >= min(10, max(1, dead_selected//2)) and
+                  bad == 0 and dup == 0
+              )
+              status = "PASS" if passed else "FAIL"
+          else:
+              status = "PASS" if ok >= int(selected*0.95) else "PARTIAL"
+
+          out = {
+              "status": status,
+              "mode": mode,
+              "selected": selected,
+              "fetch_ok": ok,
+              "fetch_error": errors,
+              "fetch_empty": empty,
+              "delisted_selected": dead_selected,
+              "delisted_ok": dead_ok,
+              "total_rows": total_rows,
+              "duplicate_date_rows": dup,
+              "nonpositive_close_rows": nonpos,
+              "bad_ohlc_rows": bad,
+              "shards": summaries,
+              "architecture": "8-way parallel BaoStock, 45s hard timeout per query, retry/reconnect, per-shard cache",
+              "next_gate": "Do not claim full-A until Beijing Stock Exchange historical coverage is added and audited."
+          }
+          (reports / f"summary_{mode}_parallel.json").write_text(
+              json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          print(json.dumps(out, ensure_ascii=False, indent=2))
+          if mode == "pilot" and status != "PASS":
+              raise SystemExit("Pilot parallel quality gate failed")
+          PY
+
+      - name: Commit downloader and aggregate reports
+        if: success()
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp shard_artifacts/universe_${MODE}.csv quant_research/reports/ 2>/dev/null || true
+          git add quant_research/reports/manifest_${MODE}_parallel.csv
+          git add quant_research/reports/summary_${MODE}_parallel.json
+          git add quant_research/reports/universe_${MODE}.csv 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "quant: ${MODE} parallel data quality gate"
+            git push
+          fi
+
+      - name: Upload aggregate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-${{ env.MODE }}-aggregate
+          path: quant_research/reports/
+          if-no-files-found: warn
+          retention-days: 30

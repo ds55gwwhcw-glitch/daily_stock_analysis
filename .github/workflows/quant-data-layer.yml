@@ -1,0 +1,449 @@
+name: A-share Quant Data Layer
+
+on:
+  push:
+    paths:
+      - ".github/workflows/quant-data-layer.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "pilot = 120-stock validation; full = full historical SH/SZ universe"
+        required: true
+        default: "pilot"
+        type: choice
+        options:
+          - pilot
+          - full
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  data-layer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      MODE: ${{ github.event.inputs.mode || 'pilot' }}
+      START_DATE: "2016-01-01"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install quant data dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "baostock>=0.8.9" "pandas>=2.2" "numpy>=1.26" "pyarrow>=15"
+
+      - name: Restore latest historical cache
+        if: env.MODE == 'full'
+        uses: actions/cache/restore@v4
+        with:
+          path: quant_research/cache
+          key: ashare-history-v1-${{ github.run_id }}
+          restore-keys: |
+            ashare-history-v1-
+
+      - name: Build data-layer script
+        run: |
+          mkdir -p quant_research/reports quant_research/cache/daily
+          cat > quant_research/run_data_layer.py <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import random
+          import time
+          from dataclasses import dataclass
+          from datetime import date, datetime
+          from pathlib import Path
+
+          import baostock as bs
+          import numpy as np
+          import pandas as pd
+
+          ROOT = Path("quant_research")
+          CACHE = ROOT / "cache" / "daily"
+          REPORTS = ROOT / "reports"
+          CACHE.mkdir(parents=True, exist_ok=True)
+          REPORTS.mkdir(parents=True, exist_ok=True)
+
+          MODE = os.getenv("MODE", "pilot").strip().lower()
+          START_DATE = os.getenv("START_DATE", "2016-01-01")
+          END_DATE = date.today().isoformat()
+
+          FIELDS = (
+              "date,code,open,high,low,close,preclose,volume,amount,"
+              "adjustflag,turn,tradestatus,pctChg,isST"
+          )
+
+          @dataclass
+          class FetchStat:
+              code: str
+              code_name: str
+              status: str
+              ipoDate: str
+              outDate: str
+              rows: int
+              min_date: str
+              max_date: str
+              duplicate_dates: int
+              nonpositive_close: int
+              bad_ohlc_rows: int
+              source: str
+              result: str
+              error: str = ""
+
+          def rs_to_df(rs) -> pd.DataFrame:
+              rows = []
+              while rs.error_code == "0" and rs.next():
+                  rows.append(rs.get_row_data())
+              if rs.error_code != "0":
+                  raise RuntimeError(f"{rs.error_code}: {rs.error_msg}")
+              return pd.DataFrame(rows, columns=rs.fields)
+
+          def login():
+              lg = bs.login()
+              if lg.error_code != "0":
+                  raise RuntimeError(f"baostock login failed {lg.error_code}: {lg.error_msg}")
+
+          def logout():
+              try:
+                  bs.logout()
+              except Exception:
+                  pass
+
+          def fetch_basic() -> pd.DataFrame:
+              df = rs_to_df(bs.query_stock_basic())
+              if df.empty:
+                  raise RuntimeError("query_stock_basic returned no rows")
+              stocks = df[df["type"].astype(str) == "1"].copy()
+              for c in ["ipoDate", "outDate", "status"]:
+                  stocks[c] = stocks[c].fillna("").astype(str)
+              stocks["ipo_dt"] = pd.to_datetime(stocks["ipoDate"], errors="coerce")
+              stocks["out_dt"] = pd.to_datetime(stocks["outDate"], errors="coerce")
+              start_dt = pd.Timestamp(START_DATE)
+              end_dt = pd.Timestamp(END_DATE)
+              eligible = stocks[
+                  (stocks["ipo_dt"].isna() | (stocks["ipo_dt"] <= end_dt)) &
+                  (stocks["out_dt"].isna() | (stocks["out_dt"] >= start_dt))
+              ].copy()
+              eligible = eligible.sort_values(["status", "code"], ascending=[True, True]).reset_index(drop=True)
+              return eligible
+
+          def fetch_trade_calendar() -> pd.DataFrame:
+              cal = rs_to_df(bs.query_trade_dates(start_date=START_DATE, end_date=END_DATE))
+              if cal.empty:
+                  raise RuntimeError("empty trade calendar")
+              return cal
+
+          def sanitize_code(code: str) -> str:
+              return code.replace(".", "_")
+
+          def cached_path(code: str) -> Path:
+              return CACHE / f"{sanitize_code(code)}.parquet"
+
+          def normalize_kline(df: pd.DataFrame) -> pd.DataFrame:
+              if df.empty:
+                  return df
+              df = df.copy()
+              df["date"] = pd.to_datetime(df["date"], errors="coerce")
+              for c in ["open","high","low","close","preclose","volume","amount","turn","pctChg"]:
+                  if c in df.columns:
+                      df[c] = pd.to_numeric(df[c], errors="coerce")
+              for c in ["tradestatus","isST","adjustflag"]:
+                  if c in df.columns:
+                      df[c] = df[c].astype(str)
+              df = (
+                  df.dropna(subset=["date"])
+                    .drop_duplicates(["date","code"], keep="last")
+                    .sort_values("date")
+                    .reset_index(drop=True)
+              )
+              return df
+
+          def query_kline(code: str, start_date: str, end_date: str) -> pd.DataFrame:
+              last_error = None
+              for attempt in range(5):
+                  try:
+                      rs = bs.query_history_k_data_plus(
+                          code,
+                          FIELDS,
+                          start_date=start_date,
+                          end_date=end_date,
+                          frequency="d",
+                          adjustflag="2",
+                      )
+                      df = rs_to_df(rs)
+                      return normalize_kline(df)
+                  except Exception as e:
+                      last_error = e
+                      if attempt in (1, 3):
+                          logout()
+                          time.sleep(2)
+                          login()
+                      time.sleep(min(8, 1.5 ** attempt))
+              raise RuntimeError(str(last_error))
+
+          def qa(df: pd.DataFrame):
+              if df.empty:
+                  return 0, 0, 0
+              dup = int(df["date"].duplicated().sum())
+              nonpos = int((df["close"].fillna(0) <= 0).sum())
+              high_ref = df[["open","close","low"]].max(axis=1)
+              low_ref = df[["open","close","high"]].min(axis=1)
+              bad = int(((df["high"] < high_ref) | (df["low"] > low_ref)).fillna(False).sum())
+              return dup, nonpos, bad
+
+          def effective_start(row) -> str:
+              ipo = row.get("ipo_dt")
+              base = pd.Timestamp(START_DATE)
+              if pd.notna(ipo) and ipo > base:
+                  return ipo.strftime("%Y-%m-%d")
+              return START_DATE
+
+          def effective_end(row) -> str:
+              out = row.get("out_dt")
+              end = pd.Timestamp(END_DATE)
+              if pd.notna(out) and out < end:
+                  return out.strftime("%Y-%m-%d")
+              return END_DATE
+
+          def select_pilot(universe: pd.DataFrame) -> pd.DataFrame:
+              active = universe[universe["status"] == "1"].copy()
+              delisted = universe[universe["status"] == "0"].copy()
+
+              # deterministic broad coverage by code + listing era
+              def stratified(df, n):
+                  if len(df) <= n:
+                      return df.copy()
+                  df = df.sort_values(["ipo_dt","code"]).reset_index(drop=True)
+                  idx = np.linspace(0, len(df)-1, n).round().astype(int)
+                  return df.iloc[idx].drop_duplicates("code")
+
+              p_active = stratified(active, 80)
+              p_delisted = stratified(delisted, 40)
+              pilot = pd.concat([p_active, p_delisted], ignore_index=True)
+              if len(pilot) < 120:
+                  remainder = universe[~universe["code"].isin(pilot["code"])].copy()
+                  need = 120 - len(pilot)
+                  pilot = pd.concat([pilot, stratified(remainder, need)], ignore_index=True)
+              return pilot.drop_duplicates("code").head(120)
+
+          def fetch_one(row) -> FetchStat:
+              code = row["code"]
+              name = row["code_name"]
+              path = cached_path(code)
+
+              try:
+                  if MODE == "full" and path.exists():
+                      df = pd.read_parquet(path)
+                      df = normalize_kline(df)
+                      # increment only if cache is stale
+                      if not df.empty:
+                          last = df["date"].max()
+                          inc_start = (last + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+                          end_s = effective_end(row)
+                          if pd.Timestamp(inc_start) <= pd.Timestamp(end_s):
+                              inc = query_kline(code, inc_start, end_s)
+                              if not inc.empty:
+                                  df = pd.concat([df, inc], ignore_index=True)
+                                  df = normalize_kline(df)
+                                  df.to_parquet(path, index=False)
+                          source = "baostock_cache+incremental"
+                      else:
+                          source = "baostock_cache_empty"
+                  else:
+                      start_s = effective_start(row)
+                      end_s = effective_end(row)
+                      if pd.Timestamp(start_s) > pd.Timestamp(end_s):
+                          df = pd.DataFrame()
+                      else:
+                          df = query_kline(code, start_s, end_s)
+                      source = "baostock"
+                      if MODE == "full" and not df.empty:
+                          df.to_parquet(path, index=False)
+
+                  dup, nonpos, bad = qa(df)
+                  min_d = "" if df.empty else df["date"].min().strftime("%Y-%m-%d")
+                  max_d = "" if df.empty else df["date"].max().strftime("%Y-%m-%d")
+                  return FetchStat(
+                      code=code, code_name=name, status=row["status"],
+                      ipoDate=row["ipoDate"], outDate=row["outDate"],
+                      rows=len(df), min_date=min_d, max_date=max_d,
+                      duplicate_dates=dup, nonpositive_close=nonpos,
+                      bad_ohlc_rows=bad, source=source,
+                      result="ok" if len(df) > 0 else "empty"
+                  )
+              except Exception as e:
+                  return FetchStat(
+                      code=code, code_name=name, status=row["status"],
+                      ipoDate=row["ipoDate"], outDate=row["outDate"],
+                      rows=0, min_date="", max_date="",
+                      duplicate_dates=0, nonpositive_close=0, bad_ohlc_rows=0,
+                      source="baostock", result="error", error=str(e)[:500]
+                  )
+
+          def fetch_benchmark():
+              code = "sh.000905"
+              try:
+                  df = query_kline(code, START_DATE, END_DATE)
+                  if not df.empty:
+                      df.to_parquet(REPORTS / "benchmark_csi500.parquet", index=False)
+                  return len(df)
+              except Exception as e:
+                  (REPORTS / "benchmark_error.txt").write_text(str(e), encoding="utf-8")
+                  return 0
+
+          def main():
+              t0 = time.time()
+              login()
+              try:
+                  universe = fetch_basic()
+                  calendar = fetch_trade_calendar()
+                  universe_out = universe.drop(columns=["ipo_dt","out_dt"], errors="ignore").copy()
+                  universe_out.to_csv(REPORTS / "universe_snapshot.csv", index=False)
+                  calendar.to_csv(REPORTS / "trade_calendar.csv", index=False)
+
+                  selected = select_pilot(universe) if MODE == "pilot" else universe
+                  selected_out = selected.drop(columns=["ipo_dt","out_dt"], errors="ignore").copy()
+                  selected_out.to_csv(REPORTS / f"selected_{MODE}.csv", index=False)
+
+                  stats = []
+                  total = len(selected)
+                  for i, (_, row) in enumerate(selected.iterrows(), start=1):
+                      stat = fetch_one(row)
+                      stats.append(stat.__dict__)
+                      if i == 1 or i % 25 == 0 or i == total:
+                          ok = sum(x["result"] == "ok" for x in stats)
+                          err = sum(x["result"] == "error" for x in stats)
+                          print(f"[{i}/{total}] ok={ok} error={err} latest={stat.code} rows={stat.rows}")
+                      time.sleep(0.03)
+
+                  manifest = pd.DataFrame(stats)
+                  manifest.to_csv(REPORTS / f"manifest_{MODE}.csv", index=False)
+
+                  bench_rows = fetch_benchmark()
+
+                  active_n = int((universe["status"] == "1").sum())
+                  delisted_n = int((universe["status"] == "0").sum())
+                  sh_n = int(universe["code"].str.startswith("sh.").sum())
+                  sz_n = int(universe["code"].str.startswith("sz.").sum())
+                  other_n = int(len(universe) - sh_n - sz_n)
+
+                  ok_df = manifest[manifest["result"] == "ok"].copy()
+                  error_df = manifest[manifest["result"] == "error"].copy()
+                  empty_df = manifest[manifest["result"] == "empty"].copy()
+
+                  summary = {
+                      "mode": MODE,
+                      "period": [START_DATE, END_DATE],
+                      "universe_total_overlapping_period": int(len(universe)),
+                      "universe_active": active_n,
+                      "universe_delisted": delisted_n,
+                      "universe_sh": sh_n,
+                      "universe_sz": sz_n,
+                      "universe_other_prefix": other_n,
+                      "selected": int(len(selected)),
+                      "fetch_ok": int(len(ok_df)),
+                      "fetch_empty": int(len(empty_df)),
+                      "fetch_error": int(len(error_df)),
+                      "total_rows": int(ok_df["rows"].sum()) if not ok_df.empty else 0,
+                      "duplicate_date_rows": int(ok_df["duplicate_dates"].sum()) if not ok_df.empty else 0,
+                      "nonpositive_close_rows": int(ok_df["nonpositive_close"].sum()) if not ok_df.empty else 0,
+                      "bad_ohlc_rows": int(ok_df["bad_ohlc_rows"].sum()) if not ok_df.empty else 0,
+                      "benchmark_csi500_rows": int(bench_rows),
+                      "elapsed_seconds": round(time.time() - t0, 2),
+                      "source_policy": {
+                          "primary_history": "BaoStock official API",
+                          "adjustment": "adjustflag=2 (front-adjusted)",
+                          "point_in_time_fundamentals": "NOT INCLUDED YET; do not use financial factors until announcement-date-safe source is added",
+                          "beijing_exchange": "Coverage is explicitly audited; BaoStock docs/examples describe sh/sz codes, so any non-sh/sz gap must be filled before claiming true all-A coverage."
+                      }
+                  }
+
+                  # gate: pilot needs enough successes and at least some delisted coverage
+                  if MODE == "pilot":
+                      selected_delisted = int((selected["status"] == "0").sum())
+                      ok_delisted = int((ok_df["status"] == "0").sum()) if not ok_df.empty else 0
+                      summary["pilot_selected_delisted"] = selected_delisted
+                      summary["pilot_ok_delisted"] = ok_delisted
+                      summary["status"] = (
+                          "PASS"
+                          if len(ok_df) >= 100 and ok_delisted >= min(10, max(1, selected_delisted // 2))
+                          and bench_rows > 500
+                          else "FAIL"
+                      )
+                  else:
+                      summary["status"] = "PASS" if len(ok_df) >= int(len(selected)*0.95) and bench_rows > 500 else "PARTIAL"
+
+                  (REPORTS / f"summary_{MODE}.json").write_text(
+                      json.dumps(summary, ensure_ascii=False, indent=2),
+                      encoding="utf-8"
+                  )
+                  print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+                  if MODE == "pilot" and summary["status"] != "PASS":
+                      raise RuntimeError("Pilot quality gate failed; inspect reports before full download")
+              finally:
+                  logout()
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+      - name: Run historical data layer
+        run: python quant_research/run_data_layer.py
+
+      - name: Commit data-layer code and compact reports
+        if: success()
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add quant_research/run_data_layer.py
+          git add quant_research/reports/universe_snapshot.csv
+          git add quant_research/reports/trade_calendar.csv
+          git add quant_research/reports/selected_${MODE}.csv
+          git add quant_research/reports/manifest_${MODE}.csv
+          git add quant_research/reports/summary_${MODE}.json
+
+          if ! git diff --cached --quiet; then
+            git commit -m "quant: ${MODE} historical data layer"
+            git push
+          fi
+
+      - name: Save full historical cache
+        if: success() && env.MODE == 'full'
+        uses: actions/cache/save@v4
+        with:
+          path: quant_research/cache
+          key: ashare-history-v1-${{ github.run_id }}
+
+      - name: Upload data-layer reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-share-data-layer-${{ env.MODE }}
+          path: |
+            quant_research/reports/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload pilot parquet sample
+        if: always() && env.MODE == 'pilot'
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-share-data-pilot-parquet
+          path: quant_research/cache/
+          if-no-files-found: warn
+          retention-days: 7

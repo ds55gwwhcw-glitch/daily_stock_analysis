@@ -1,0 +1,193 @@
+import json, time
+from datetime import date, timedelta
+from pathlib import Path
+import akshare as ak
+import numpy as np
+import pandas as pd
+
+OUT = Path("quant_research/results")
+OUT.mkdir(parents=True, exist_ok=True)
+
+SYMBOLS = [
+    "600519","601318","600036","600900","601012",
+    "600276","600887","601166","600030","600309",
+    "000001","000333","000651","000858","002415",
+    "002594","300750","300059","300015","002475"
+]
+FACTORS = ["mom126","mom63","reversal21","lowvol60","liquidity20"]
+
+def fetch_hist(symbol, start_s, end_s):
+    err = None
+    for i in range(4):
+        try:
+            df = ak.stock_zh_a_hist(
+                symbol=symbol, period="daily",
+                start_date=start_s, end_date=end_s, adjust="qfq"
+            )
+            if df is None or df.empty:
+                raise RuntimeError("empty dataframe")
+            df = df.rename(columns={
+                "日期":"date","开盘":"open","收盘":"close","最高":"high",
+                "最低":"low","成交量":"volume","成交额":"amount"
+            })
+            if "amount" not in df.columns:
+                df["amount"] = np.nan
+            need = ["date","open","high","low","close","volume","amount"]
+            if any(c not in df.columns for c in need):
+                raise RuntimeError("missing OHLCV columns")
+            df = df[need].copy()
+            df["date"] = pd.to_datetime(df["date"])
+            for c in need[1:]:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+            df = df.dropna(subset=["date","close"]).drop_duplicates("date").sort_values("date")
+            if len(df) < 180:
+                raise RuntimeError(f"too few rows: {len(df)}")
+            return df.reset_index(drop=True)
+        except Exception as e:
+            err = e
+            time.sleep(2 ** i)
+    raise RuntimeError(f"{symbol}: {err}")
+
+def ratio(a, b):
+    return np.nan if pd.isna(a) or pd.isna(b) or b == 0 else float(a / b - 1)
+
+def make_row(symbol, df, i):
+    if i < 130 or i + 20 >= len(df):
+        return None
+    c = df["close"]
+    r = c.pct_change()
+    liq = df["amount"] if df["amount"].notna().sum() else df["volume"] * c
+    vals = {
+        "date": df["date"].iloc[i],
+        "symbol": symbol,
+        "mom126": ratio(c.iloc[i], c.iloc[i-126]),
+        "mom63": ratio(c.iloc[i], c.iloc[i-63]),
+        "reversal21": -ratio(c.iloc[i], c.iloc[i-21]),
+        "lowvol60": -float(r.iloc[i-59:i+1].std()),
+        "liquidity20": float(np.log1p(liq.iloc[i-19:i+1].mean())),
+        "forward20": ratio(c.iloc[i+20], c.iloc[i]),
+    }
+    return vals if all(np.isfinite(vals[k]) for k in FACTORS + ["forward20"]) else None
+
+def standardize(panel):
+    pieces = []
+    for _, g in panel.groupby("date"):
+        g = g.copy()
+        for c in FACTORS:
+            x = g[c].clip(g[c].quantile(.025), g[c].quantile(.975))
+            x = x.fillna(x.median())
+            sd = x.std(ddof=0)
+            g[c] = 0.0 if not np.isfinite(sd) or sd == 0 else (x - x.mean()) / sd
+        pieces.append(g)
+    return pd.concat(pieces, ignore_index=True)
+
+def ridge(X, y, alpha=10.0):
+    xm, ym = X.mean(0), y.mean()
+    Xc, yc = X - xm, y - ym
+    b = np.linalg.solve(Xc.T @ Xc + alpha*np.eye(X.shape[1]), Xc.T @ yc)
+    return float(ym - xm @ b), b
+
+end = date.today()
+start = end - timedelta(days=365*2 + 220)
+histories, qas = {}, []
+
+for n, s in enumerate(SYMBOLS, 1):
+    try:
+        df = fetch_hist(s, start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
+        histories[s] = df
+        qas.append({
+            "symbol":s, "rows":len(df),
+            "duplicate_dates":int(df["date"].duplicated().sum()),
+            "nonpositive_close":int((df["close"]<=0).sum())
+        })
+        print(f"{n:02d}/{len(SYMBOLS)} {s}: {len(df)} rows")
+    except Exception as e:
+        qas.append({"symbol":s,"rows":0,"error":str(e)})
+        print(f"{s}: FAILED {e}")
+
+pd.DataFrame(qas).to_csv(OUT/"data_quality_summary.csv", index=False)
+if len(histories) < 12:
+    raise RuntimeError(f"Only {len(histories)} symbols fetched; need >= 12")
+
+rows = []
+for s, df in histories.items():
+    for i in range(130, len(df)-20, 20):
+        row = make_row(s, df, i)
+        if row:
+            rows.append(row)
+
+panel = pd.DataFrame(rows)
+panel["date"] = pd.to_datetime(panel["date"]).dt.normalize()
+valid = panel.groupby("date")["symbol"].nunique()
+panel = panel[panel["date"].isin(valid[valid >= 10].index)].copy()
+panel = standardize(panel)
+
+dates = sorted(panel["date"].unique())
+if len(dates) < 8:
+    raise RuntimeError(f"Only {len(dates)} valid rebalance dates")
+
+cut = max(4, int(len(dates)*0.70))
+train_dates, test_dates = set(dates[:cut]), dates[cut:]
+train = panel[panel["date"].isin(train_dates)].copy()
+test = panel[panel["date"].isin(test_dates)].copy()
+
+intercept, beta = ridge(
+    train[FACTORS].to_numpy(float),
+    train["forward20"].to_numpy(float),
+    alpha=10.0
+)
+test["score"] = intercept + test[FACTORS].to_numpy(float) @ beta
+test.to_csv(OUT/"oos_predictions.csv", index=False)
+
+coefs = pd.DataFrame({"factor":FACTORS, "coefficient":beta})
+coefs.loc[len(coefs)] = ["intercept", intercept]
+coefs.to_csv(OUT/"factor_coefficients.csv", index=False)
+
+periods, latest = [], None
+for dt in test_dates:
+    g = test[test["date"] == dt].sort_values("score", ascending=False)
+    if len(g) < 10:
+        continue
+    top = g.head(5).copy()
+    gross = float(top["forward20"].mean())
+    periods.append({
+        "date":str(pd.Timestamp(dt).date()),
+        "gross_return":gross,
+        "net_return":gross-0.004,
+        "n_holdings":5
+    })
+    latest = top[["date","symbol","score"]].copy()
+    latest["weight"] = 0.20
+
+perf = pd.DataFrame(periods)
+if len(perf) < 3:
+    raise RuntimeError(f"Only {len(perf)} OOS periods")
+perf["equity"] = (1 + perf["net_return"]).cumprod()
+perf.to_csv(OUT/"equity_curve.csv", index=False)
+latest.to_csv(OUT/"latest_target_holdings.csv", index=False)
+
+dd = perf["equity"]/perf["equity"].cummax()-1
+metrics = {
+    "mode":"SMOKE_ONLY_NOT_INVESTMENT_RESULT",
+    "symbols_requested":20,
+    "symbols_fetched":len(histories),
+    "rebalance_dates_total":len(dates),
+    "train_rows":len(train),
+    "oos_rows":len(test),
+    "oos_periods":len(perf),
+    "cumulative_return":float(perf["equity"].iloc[-1]-1),
+    "max_drawdown":float(dd.min()),
+    "period_hit_rate":float((perf["net_return"]>0).mean()),
+    "roundtrip_cost_assumption":0.004,
+    "next_stage":"Full historical A-share universe, 2016-present cache, PIT fundamentals, strict 2025-2026 OOS"
+}
+(OUT/"oos_metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+status = {
+    "status":"PASS",
+    "stage":"20_symbols_2_year_smoke",
+    "symbols_fetched":len(histories),
+    "oos_periods":len(perf)
+}
+(OUT/"smoke_status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+print(json.dumps(status, ensure_ascii=False, indent=2))
+print(json.dumps(metrics, ensure_ascii=False, indent=2))

@@ -28,6 +28,8 @@ env:
   START_DATE: "2016-01-01"
   CHUNK_SIZE: "200"
   CHECKPOINT_EVERY: "50"
+  SINGLE_STOCK_TIMEOUT: "90"
+  SINGLE_STOCK_MAX_ATTEMPTS: "2"
 
 jobs:
   collect:
@@ -65,9 +67,9 @@ jobs:
           rm -rf quant_research/state/full_v3
           mkdir -p quant_research/full_cache/daily quant_research/state/full_v3
 
-      - name: Collect next sequential chunk with checkpoints
+      - name: Collect next sequential chunk with checkpoints and hard timeouts
         run: |
-          python quant_research/scripts/full_history_v3.py
+          python quant_research/scripts/full_history_v3_hard_timeout.py
 
       - name: Commit progress and compact manifests
         run: |

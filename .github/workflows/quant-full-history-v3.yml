@@ -30,6 +30,9 @@ env:
   CHECKPOINT_EVERY: "50"
   SINGLE_STOCK_TIMEOUT: "90"
   SINGLE_STOCK_MAX_ATTEMPTS: "2"
+  BATCH_MAX_ATTEMPTS: "3"
+  BATCH_RETRY_DELAY: "20"
+  DISPATCH_MAX_ATTEMPTS: "3"
 
 jobs:
   collect:
@@ -67,9 +70,32 @@ jobs:
           rm -rf quant_research/state/full_v3
           mkdir -p quant_research/full_cache/daily quant_research/state/full_v3
 
-      - name: Collect next sequential chunk with checkpoints and hard timeouts
+      - name: Collect next sequential chunk with checkpoints, hard timeouts and batch retries
+        shell: bash
         run: |
-          python quant_research/scripts/full_history_v3_hard_timeout.py
+          status=1
+          for attempt in $(seq 1 "$BATCH_MAX_ATTEMPTS"); do
+            echo "V3 batch attempt ${attempt}/${BATCH_MAX_ATTEMPTS}"
+            set +e
+            python quant_research/scripts/full_history_v3_hard_timeout.py
+            status=$?
+            set -e
+
+            if [ "$status" -eq 0 ]; then
+              echo "V3 batch completed successfully"
+              exit 0
+            fi
+
+            echo "V3 batch attempt ${attempt} failed with exit code ${status}"
+            if [ "$attempt" -lt "$BATCH_MAX_ATTEMPTS" ]; then
+              delay=$((BATCH_RETRY_DELAY * attempt))
+              echo "Retrying from durable checkpoint in ${delay}s"
+              sleep "$delay"
+            fi
+          done
+
+          echo "V3 batch exhausted ${BATCH_MAX_ATTEMPTS} attempts"
+          exit "$status"
 
       - name: Commit progress and compact manifests
         run: |
@@ -107,9 +133,21 @@ jobs:
         if: steps.state.outputs.completed != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           echo "Dispatching next sequential chunk at cursor ${{ steps.state.outputs.cursor }}/${{ steps.state.outputs.universe_size }}"
-          gh workflow run quant-full-history-v3.yml --ref main -f action=continue
+          for attempt in $(seq 1 "$DISPATCH_MAX_ATTEMPTS"); do
+            if gh workflow run quant-full-history-v3.yml --ref main -f action=continue; then
+              echo "Self-dispatch succeeded on attempt ${attempt}"
+              exit 0
+            fi
+            echo "Self-dispatch attempt ${attempt}/${DISPATCH_MAX_ATTEMPTS} failed"
+            if [ "$attempt" -lt "$DISPATCH_MAX_ATTEMPTS" ]; then
+              sleep $((10 * attempt))
+            fi
+          done
+          echo "Self-dispatch exhausted retries"
+          exit 1
 
       - name: Upload compact state snapshot
         if: always()

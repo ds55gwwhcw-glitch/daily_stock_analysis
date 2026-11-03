@@ -79,8 +79,29 @@ def hard_fetch_history(code: str, start_s: str, end_s: str):
     raise RuntimeError(str(last) if last else f"isolated fetch failed for {code}")
 
 
+def run_without_parent_baostock_session():
+    """Run V3 without the obsolete batch-level BaoStock session.
+
+    The frozen universe is prepared first with the original BaoStock helpers if it
+    ever needs to be rebuilt. After that, every history request is isolated in
+    baostock_fetch_one.py, so the parent process must not keep its own session.
+    """
+    base.ensure_dirs()
+    base.build_or_reuse_universe()
+
+    original_login = base.login
+    original_logout = base.logout
+    base.login = lambda: None
+    base.logout = lambda: None
+    try:
+        base.main()
+    finally:
+        base.login = original_login
+        base.logout = original_logout
+
+
 base.fetch_history = hard_fetch_history
 
 
 if __name__ == "__main__":
-    base.main()
+    run_without_parent_baostock_session()

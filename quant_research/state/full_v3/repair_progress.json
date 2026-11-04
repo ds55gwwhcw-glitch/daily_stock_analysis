@@ -1,9 +1,9 @@
 {
   "round": 1,
-  "cursor": 80,
+  "cursor": 120,
   "terminal": false,
   "started_at": "2026-11-04",
-  "attempted": 80,
-  "recovered": 80,
+  "attempted": 120,
+  "recovered": 120,
   "updated_at": "2026-11-04"
 }

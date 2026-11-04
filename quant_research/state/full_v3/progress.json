@@ -4,11 +4,11 @@
   "started_at": "2026-10-31",
   "universe_size": 5475,
   "downloaded_codes": 5475,
-  "ok_codes": 5251,
-  "error_codes": 224,
+  "ok_codes": 5291,
+  "error_codes": 184,
   "empty_codes": 0,
   "last_run_number": "28",
   "updated_at": "2026-11-04",
   "last_run_attempt": "1",
-  "repair_last_run_number": "1"
+  "repair_last_run_number": "3"
 }

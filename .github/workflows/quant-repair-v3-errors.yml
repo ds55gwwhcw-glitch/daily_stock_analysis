@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - .github/workflows/quant-repair-v3-errors.yml
+      - quant_research/scripts/repair_v3_errors.py
   workflow_dispatch:
     inputs:
       action:

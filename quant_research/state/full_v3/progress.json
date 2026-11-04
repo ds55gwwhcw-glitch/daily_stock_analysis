@@ -1,13 +1,13 @@
 {
-  "cursor": 5350,
-  "completed": false,
+  "cursor": 5475,
+  "completed": true,
   "started_at": "2026-10-31",
   "universe_size": 5475,
-  "downloaded_codes": 5350,
-  "ok_codes": 5086,
+  "downloaded_codes": 5475,
+  "ok_codes": 5211,
   "error_codes": 264,
   "empty_codes": 0,
-  "last_run_number": "27",
+  "last_run_number": "28",
   "updated_at": "2026-11-04",
   "last_run_attempt": "1"
 }

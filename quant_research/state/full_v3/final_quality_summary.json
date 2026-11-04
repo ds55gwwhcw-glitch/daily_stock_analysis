@@ -1,0 +1,19 @@
+{
+  "status": "READY_FOR_MODEL",
+  "scope": "SH/SZ historical universe only",
+  "universe_size": 5475,
+  "ok_codes": 5211,
+  "error_codes": 264,
+  "empty_codes": 0,
+  "delisted_total": 252,
+  "delisted_ok": 252,
+  "rows": 10749534,
+  "raw_duplicate_rows": 0,
+  "normalized_duplicate_dates": 0,
+  "actual_nonpositive_close": 0,
+  "missing_close_trading": 0,
+  "missing_close_suspended": 3,
+  "bad_ohlc_rows": 0,
+  "bse_included": false,
+  "note": "BSE remains a separately tracked coverage gap; do not label this full A-share yet."
+}

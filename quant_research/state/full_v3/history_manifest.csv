@@ -3277,49 +3277,49 @@ sz.002269,美邦服饰,1,2008-08-28,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0
 sz.002270,华明装备,1,2008-09-05,,2628,2016-01-04,2026-10-30,ok,baostock,,0,0,0,0,0,0
 sz.002271,东方雨虹,1,2008-09-10,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
 sz.002272,川润股份,1,2008-09-19,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
-sz.002273,水晶光电,1,2008-09-19,,0,,,error,baostock,hard timeout after 90s for sz.002273 attempt 2/2,0,0,0,0,0,0
-sz.002274,华昌化工,1,2008-09-25,,0,,,error,baostock,hard timeout after 90s for sz.002274 attempt 2/2,0,0,0,0,0,0
-sz.002275,桂林三金,1,2009-07-10,,0,,,error,baostock,hard timeout after 90s for sz.002275 attempt 2/2,0,0,0,0,0,0
-sz.002276,万马股份,1,2009-07-10,,0,,,error,baostock,hard timeout after 90s for sz.002276 attempt 2/2,0,0,0,0,0,0
-sz.002277,友阿股份,1,2009-07-17,,0,,,error,baostock,hard timeout after 90s for sz.002277 attempt 2/2,0,0,0,0,0,0
-sz.002278,神开股份,1,2009-08-11,,0,,,error,baostock,hard timeout after 90s for sz.002278 attempt 2/2,0,0,0,0,0,0
-sz.002279,久其软件,1,2009-08-11,,0,,,error,baostock,hard timeout after 90s for sz.002279 attempt 2/2,0,0,0,0,0,0
+sz.002273,水晶光电,1,2008-09-19,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002274,华昌化工,1,2008-09-25,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002275,桂林三金,1,2009-07-10,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002276,万马股份,1,2009-07-10,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002277,友阿股份,1,2009-07-17,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002278,神开股份,1,2009-08-11,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002279,久其软件,1,2009-08-11,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
 sz.002280,ST联络,0,2009-08-21,2024-08-16,2097,2016-01-04,2024-08-16,ok,baostock,,0,0,0,0,0,0
-sz.002281,光迅科技,1,2009-08-21,,0,,,error,baostock,hard timeout after 90s for sz.002281 attempt 2/2,0,0,0,0,0,0
-sz.002282,博深股份,1,2009-08-21,,0,,,error,baostock,hard timeout after 90s for sz.002282 attempt 2/2,0,0,0,0,0,0
-sz.002283,天润工业,1,2009-08-21,,0,,,error,baostock,hard timeout after 90s for sz.002283 attempt 2/2,0,0,0,0,0,0
-sz.002284,亚太股份,1,2009-08-28,,0,,,error,baostock,isolated fetch failed for sz.002284 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002285,世联行,1,2009-08-28,,0,,,error,baostock,isolated fetch failed for sz.002285 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002286,保龄宝,1,2009-08-28,,0,,,error,baostock,isolated fetch failed for sz.002286 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002287,奇正藏药,1,2009-08-28,,0,,,error,baostock,isolated fetch failed for sz.002287 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
+sz.002281,光迅科技,1,2009-08-21,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002282,博深股份,1,2009-08-21,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002283,天润工业,1,2009-08-21,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002284,亚太股份,1,2009-08-28,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002285,世联行,1,2009-08-28,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002286,保龄宝,1,2009-08-28,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002287,奇正藏药,1,2009-08-28,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
 sz.002288,*ST超华,0,2009-09-03,2024-08-19,2098,2016-01-04,2024-08-19,ok,baostock,,0,0,0,0,0,0
-sz.002289,宇顺电子,1,2009-09-03,,0,,,error,baostock,isolated fetch failed for sz.002289 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002290,禾盛新材,1,2009-09-03,,0,,,error,baostock,isolated fetch failed for sz.002290 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002291,遥望科技,1,2009-09-03,,0,,,error,baostock,isolated fetch failed for sz.002291 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002292,奥飞娱乐,1,2009-09-10,,0,,,error,baostock,isolated fetch failed for sz.002292 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002293,罗莱生活,1,2009-09-10,,0,,,error,baostock,isolated fetch failed for sz.002293 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002294,信立泰,1,2009-09-10,,0,,,error,baostock,isolated fetch failed for sz.002294 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002295,精艺股份,1,2009-09-29,,0,,,error,baostock,isolated fetch failed for sz.002295 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002296,辉煌科技,1,2009-09-29,,0,,,error,baostock,isolated fetch failed for sz.002296 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002297,博云新材,1,2009-09-29,,0,,,error,baostock,isolated fetch failed for sz.002297 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002298,中电鑫龙,1,2009-09-29,,0,,,error,baostock,isolated fetch failed for sz.002298 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002299,圣农发展,1,2009-10-21,,0,,,error,baostock,isolated fetch failed for sz.002299 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002300,太阳电缆,1,2009-10-21,,0,,,error,baostock,isolated fetch failed for sz.002300 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002301,齐心集团,1,2009-10-21,,0,,,error,baostock,isolated fetch failed for sz.002301 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002302,西部建设,1,2009-11-03,,0,,,error,baostock,isolated fetch failed for sz.002302 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002303,美盈森,1,2009-11-03,,0,,,error,baostock,isolated fetch failed for sz.002303 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002304,洋河股份,1,2009-11-06,,0,,,error,baostock,isolated fetch failed for sz.002304 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002305,*ST南置,1,2009-11-06,,0,,,error,baostock,isolated fetch failed for sz.002305 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002306,ST云网,1,2009-11-11,,0,,,error,baostock,isolated fetch failed for sz.002306 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002307,北新路桥,1,2009-11-11,,0,,,error,baostock,isolated fetch failed for sz.002307 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
+sz.002289,宇顺电子,1,2009-09-03,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002290,禾盛新材,1,2009-09-03,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002291,遥望科技,1,2009-09-03,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002292,奥飞娱乐,1,2009-09-10,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002293,罗莱生活,1,2009-09-10,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002294,信立泰,1,2009-09-10,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002295,精艺股份,1,2009-09-29,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002296,辉煌科技,1,2009-09-29,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002297,博云新材,1,2009-09-29,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002298,中电鑫龙,1,2009-09-29,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002299,圣农发展,1,2009-10-21,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002300,太阳电缆,1,2009-10-21,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002301,齐心集团,1,2009-10-21,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002302,西部建设,1,2009-11-03,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002303,美盈森,1,2009-11-03,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002304,洋河股份,1,2009-11-06,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002305,*ST南置,1,2009-11-06,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002306,ST云网,1,2009-11-11,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002307,北新路桥,1,2009-11-11,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
 sz.002308,*ST威创,0,2009-11-27,2024-09-27,2125,2016-01-04,2024-09-27,ok,baostock,,0,0,0,0,0,0
-sz.002309,中利集团,1,2009-11-27,,0,,,error,baostock,isolated fetch failed for sz.002309 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002310,东方新能,1,2009-11-27,,0,,,error,baostock,isolated fetch failed for sz.002310 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002311,海大集团,1,2009-11-27,,0,,,error,baostock,isolated fetch failed for sz.002311 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002312,川发龙蟒,1,2009-12-03,,0,,,error,baostock,isolated fetch failed for sz.002312 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002313,日海智能,1,2009-12-03,,0,,,error,baostock,isolated fetch failed for sz.002313 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002314,南山控股,1,2009-12-03,,0,,,error,baostock,isolated fetch failed for sz.002314 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
-sz.002315,焦点科技,1,2009-12-09,,0,,,error,baostock,isolated fetch failed for sz.002315 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
+sz.002309,中利集团,1,2009-11-27,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002310,东方新能,1,2009-11-27,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002311,海大集团,1,2009-11-27,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002312,川发龙蟒,1,2009-12-03,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002313,日海智能,1,2009-12-03,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002314,南山控股,1,2009-12-03,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
+sz.002315,焦点科技,1,2009-12-09,,2631,2016-01-04,2026-11-04,ok,baostock,,0,0,0,0,0,0
 sz.002316,亚联发展,1,2009-12-09,,0,,,error,baostock,isolated fetch failed for sz.002316 attempt 2/2: RuntimeError: login 10002007: 网络接收错误。,0,0,0,0,0,0
 sz.002317,众生药业,1,2009-12-11,,2630,2016-01-04,2026-11-03,ok,baostock,,0,0,0,0,0,0
 sz.002318,久立特材,1,2009-12-11,,2630,2016-01-04,2026-11-03,ok,baostock,,0,0,0,0,0,0

@@ -1,0 +1,123 @@
+name: A-share V3 Targeted Error Repair
+
+on:
+  push:
+    paths:
+      - .github/workflows/quant-repair-v3-errors.yml
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Continue bounded repair without resetting historical data
+        required: true
+        default: continue
+        type: choice
+        options: [continue]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: ashare-v3-repair
+  cancel-in-progress: false
+
+env:
+  REPAIR_CHUNK_SIZE: '40'
+  REPAIR_MAX_ROUNDS: '3'
+  SINGLE_STOCK_TIMEOUT: '90'
+  SINGLE_STOCK_MAX_ATTEMPTS: '2'
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 320
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install 'baostock>=0.9.4' 'pandas>=2.2' 'numpy>=1.26' 'pyarrow>=15'
+      - name: Restore cumulative V3 parquet cache
+        uses: actions/cache/restore@v4
+        with:
+          path: quant_research/full_cache
+          key: ashare-shsz-full-v3-repair-${{ github.run_number }}-${{ github.run_attempt }}
+          restore-keys: |
+            ashare-shsz-full-v3-
+      - name: Repair bounded batch of failed symbols
+        run: python quant_research/scripts/repair_v3_errors.py
+      - name: Commit repaired manifest and strict quality gate with push retries
+        shell: bash
+        run: |
+          set -e
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add quant_research/state/full_v3/
+          if git diff --cached --quiet; then
+            echo 'No state changes'
+            exit 0
+          fi
+          git commit -m 'quant: repair failed historical symbols and update gate'
+          for attempt in 1 2 3 4 5; do
+            echo "Repair state push attempt ${attempt}/5"
+            if git fetch origin main; then
+              if ! git rebase origin/main; then
+                git rebase --abort || true
+                echo 'Unresolved state conflict; aborting instead of overwriting upstream'
+                exit 1
+              fi
+              if git push origin HEAD:main; then
+                echo 'Repair state pushed'
+                exit 0
+              fi
+            fi
+            sleep $((10 * attempt))
+          done
+          exit 1
+      - name: Save cumulative V3 cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: quant_research/full_cache
+          key: ashare-shsz-full-v3-repair-${{ github.run_number }}-${{ github.run_attempt }}
+      - name: Read committed repair state
+        id: state
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          root = Path('quant_research/state/full_v3')
+          state = json.loads((root/'repair_progress.json').read_text())
+          gate = json.loads((root/'repair_quality_gate.json').read_text())
+          print('terminal=' + str(state['terminal']).lower())
+          print('model_ready=' + str(gate['model_data_gate'] == 'PASS').lower())
+          print('remaining=' + str(gate['error_codes']))
+          PY
+      - name: Queue next bounded repair batch
+        if: steps.state.outputs.terminal == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if gh workflow run quant-repair-v3-errors.yml --ref main -f action=continue; then
+              exit 0
+            fi
+            sleep $((15 * attempt))
+          done
+          exit 1
+      - name: Start walk-forward research only after strict gate passes
+        if: steps.state.outputs.terminal == 'true' && steps.state.outputs.model_ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run quant-walkforward-v1.yml --ref main -f mode=research
+      - name: Upload repair audit snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-repair-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            quant_research/state/full_v3/repair_*.json
+            quant_research/state/full_v3/final_quality_summary.json
+          retention-days: 30

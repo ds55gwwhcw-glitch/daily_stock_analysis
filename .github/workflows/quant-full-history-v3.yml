@@ -75,7 +75,7 @@ jobs:
         run: |
           status=1
           for attempt in $(seq 1 "$BATCH_MAX_ATTEMPTS"); do
-            echo "V3 batch attempt ${attempt}/${BATCH_MAX_ATTEMPTS}"
+            echo "V3 batch attempt ${attempt}/$BATCH_MAX_ATTEMPTS"
             set +e
             python quant_research/scripts/full_history_v3_hard_timeout.py
             status=$?
@@ -94,19 +94,55 @@ jobs:
             fi
           done
 
-          echo "V3 batch exhausted ${BATCH_MAX_ATTEMPTS} attempts"
+          echo "V3 batch exhausted $BATCH_MAX_ATTEMPTS attempts"
           exit "$status"
 
       - name: Commit progress and compact manifests
+        shell: bash
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add quant_research/state/full_v3/
-          if ! git diff --cached --quiet; then
-            git commit -m "quant: advance SHSZ full-history cursor"
-            git pull --rebase origin main
-            git push
+
+          if git diff --cached --quiet; then
+            echo "No state changes to commit"
+            exit 0
           fi
+
+          git commit -m "quant: advance SHSZ full-history cursor"
+
+          # GitHub occasionally returns a transient 500 while accepting a push.
+          # Retry fetch/rebase/push; never force-push or discard the local commit.
+          max_attempts=5
+          for attempt in $(seq 1 "$max_attempts"); do
+            echo "State push attempt ${attempt}/${max_attempts}"
+
+            if ! git fetch origin main; then
+              echo "git fetch failed on attempt ${attempt}"
+            else
+              if ! git rebase origin/main; then
+                echo "Rebase conflict detected; aborting safely for manual reconciliation"
+                git rebase --abort || true
+                exit 1
+              fi
+
+              if git push origin HEAD:main; then
+                echo "State commit pushed successfully on attempt ${attempt}"
+                exit 0
+              fi
+              echo "git push failed on attempt ${attempt}"
+            fi
+
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              delay=$((10 * attempt))
+              echo "Retrying state push in ${delay}s"
+              sleep "$delay"
+            fi
+          done
+
+          echo "Unable to push state after ${max_attempts} attempts"
+          exit 1
 
       - name: Save cumulative history cache and checkpoint
         if: always()
@@ -141,7 +177,7 @@ jobs:
               echo "Self-dispatch succeeded on attempt ${attempt}"
               exit 0
             fi
-            echo "Self-dispatch attempt ${attempt}/${DISPATCH_MAX_ATTEMPTS} failed"
+            echo "Self-dispatch attempt ${attempt}/$DISPATCH_MAX_ATTEMPTS failed"
             if [ "$attempt" -lt "$DISPATCH_MAX_ATTEMPTS" ]; then
               sleep $((10 * attempt))
             fi

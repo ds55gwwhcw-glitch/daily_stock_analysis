@@ -1,0 +1,15 @@
+{
+  "status": "NEEDS_REPAIR",
+  "updated_at": "2026-11-04",
+  "universe_size": 5475,
+  "ok_codes": 5251,
+  "error_codes": 224,
+  "empty_codes": 0,
+  "tradeable_universe_codes": 4854,
+  "tradeable_error_codes": 176,
+  "rows": 10803640,
+  "round": 1,
+  "repair_terminal": false,
+  "model_data_gate": "BLOCKED",
+  "reason": "Strict zero-error gate; historical prices remain research-only."
+}

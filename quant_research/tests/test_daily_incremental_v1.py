@@ -42,7 +42,7 @@ def test_completed_market_asof_pinned_and_future_bar_blocks_gate(tmp_path, monke
     audit = json.loads((day / "daily_quality_gate.json").read_text())
     assert audit["status"] == "BLOCKED"
     assert audit["error_codes"] == 1
-    assert audit["terminal"]
+    assert not audit["terminal"]  # queued for one bounded retry
     manifest = pd.read_csv(day / "daily_manifest.csv")
     assert manifest.iloc[0]["result"] == "error"
     assert "future_date_in_cache" in manifest.iloc[0]["error"]

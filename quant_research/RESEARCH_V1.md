@@ -1,19 +1,38 @@
-# SH/SZ Quant Research V1 — Research Only
+# SH/SZ Quant Research V1 — Data, Research, Virtual Account
 
-The original V3 traversal covered 5,475 SH/SZ symbols, but 264 were error rows. Its old \`READY_FOR_MODEL\` mark meant only a 95% collection rate. **It was not an acceptable data-quality or live-trading gate.**
+## Verified historical baseline
 
-## Execution
+- Frozen SH/SZ universe: **5,475 symbols**, including 252 delisted.
+- Targeted V3 repair completed: **264/264 recovered**, **5,475/5,475 ok**, **0 errors**.
+- Total historical raw-record rows: **11,155,363**. `repair_quality_gate.json` is PASS.
+- Broker-permitted historical symbols: **4,854** (SH 600/601/603/605; SZ 000/001/002/003 and ChiNext 300/301/302).
+- Active listed symbols eligible for daily incremental refresh as of 2026-11-04: **4,605**.
+- BSE and STAR are excluded from broker-universe research. BSE historical coverage is NOT complete.
 
-1. \`A-share V3 Targeted Error Repair\` operates from the frozen 5,475-code universe and existing cumulative historical cache. It freezes the failed-code list per round, repairs 40 codes per run, self-dispatches with checkpoints in GitHub's committed state, and has a hard limit of three rounds. No historical reset, no force push, no fabricated successes.
-2. The new \`repair_quality_gate.json\` requires **zero** failed/empty symbols before allowing quantitative research. Exhausted repair with errors is clearly \`BLOCKED\`. The authoritative V3 progress cursor stays 5,475 and result counts are reconciled.
-3. \`quant_walkforward_v1.py --mode validate\` audits stock-code prefixes and emits \`permitted_universe.csv\`. Shanghai main board \`600/601/603/605\`; Shenzhen main board \`000/001/002/003\`; ChiNext \`300/301/302\`. Beijing, STAR, B-shares, ETFs and other categories excluded. Broker availability and daily ST/suspension must still be checked by date.
-4. After repair passes, the repair workflow dispatches \`quant-walkforward-v1.yml\` in \`research\` mode. The model uses monthly momentum, reversal, low-volatility and liquidity features; expanding ridge fit, and **2023 onward** out-of-sample periods. Only training labels whose exit date was already observed prior to the test signal are eligible. Research uses next-session opening prices and 15bp buy / 20bp sell cost assumptions; produces inspectable GitHub Actions artifacts.
+## Pipeline and operational safeguards
 
-## Not ready for live or genuine daily simulated positions
+1. `.github/workflows/quant-full-history-v3.yml`: historical traversal completed; its 5,475 cursor does not change with incremental refresh.
+2. `.github/workflows/quant-repair-v3-errors.yml`: targeted missing histories repaired. Three-round hard cap, strict zero-error gate, checkpointed state.
+3. `.github/workflows/quant-walkforward-v1.yml`: expanding train-only monthly price/volume-factor research, OOS from 2023, benchmark comparison to same-universe equal weight. Runs tests; produces reproducible artifacts and writes lightweight gated research status to `state/paper_v1`.
+4. `.github/workflows/quant-daily-incremental-v1.yml`: UTC 10:30 Mon-Fri (Beijing 18:30), 300-symbol batches, child-worker 25s hard timeout x 2 attempts; safe manifest commit and rolling cached-parquet save; self-dispatch until the selected as-of day completes. Retries failed symbols once at the end. Blocks new signals if errors or data freshness problems persist. This does not rescan 2016 onward.
+5. `quant_research/scripts/publish_paper_snapshot_v1.py`: only publishes a candidate-watchlist after a complete daily refresh and fresh model signal. A blocked status is recorded otherwise.
+6. `quant_research/scripts/paper_shadow_account_v1.py`: **isolated hypothetical virtual ledger**, with default CNY 1,000,000 fictitious starting cash. It queues new targets only at conservative weekday-based month-end, never assumes same-day execution of close-generated information, and uses later raw/unadjusted BaoStock quotes (`adjustflag=3`) to model next-session opening fills. Round lots, approximate limit-price/ST guards, cash constraints and cost assumptions are checked. Missing quotes mean no fill. Book and account updates never touch any real broker, QMT or PTrade.
 
-- BaoStock forward-adjusted prices are **not** independently certified point-in-time corporate-action histories.
-- Corporate action effects, delistings, suspended exits, limit-up/limit-down executions, T+1, round lots, minimum commissions and other slippage need broker-grade replay. Price-only factors do not validate a fundamental PIT model.
-- These reports are a research proxy. A \`paper_target_candidates.csv\` is a **non-executable watchlist**, not an account position or confirmed fill. Outdated source data is marked \`STALE_NO_TRADING\`.
-- Historical data need a separate validated **daily incremental refresh**; that job is not yet installed. For that reason no automated recurring simulated-holdings run or broker order has been enabled. Enable it only after verified fresh data, custody/account ledger and actual fill rules.
+## First sample out-of-sample research result, NOT executable PnL
 
-Keep \`progress.json\`, \`history_manifest.csv\`, repair gate, raw parquet cache, and model reports mutually consistent. Never treat \`cursor=5475\` as proof that all 5,475 historical datasets were downloaded correctly.
+- Period: 44 monthly OOS cycles, starting Jan 2023.
+- Ten-stock multi-factor proxy cumulative return: **+48.02%**.
+- Same-date equal-weight research proxy cumulative return: **+41.11%**.
+- Strategy annualized return proxy: **+11.29%**.
+- Max drawdown proxy: **-32.90%**, Sharpe proxy about **0.55**.
+- These values depend on adjusted pricing, approximated trading costs and limited execution; they are **not** proven trading performance.
+
+## Important unverified assumptions and hard stops
+
+- BaoStock adjusted history is not a certified point-in-time corporate-action tape; the unadjusted price paper ledger also does not yet implement cash dividends, share splits, rights issues or complete exchange corporate events.
+- Day-to-day virtual PnL and fills are **hypothetical** and can differ materially from market execution due to limit queues, actual liquidity, T+1, commission minima and tax/corporate-action rules. Approximate weekday month-end misses special exchange holidays rather than backdating a fill.
+- Research candidate rows are not open portfolio positions. `latest_status.json` records BLOCKED if the daily snapshot has not passed its gate, and the virtual ledger does not fabricate positions during blocked states.
+- No broker credentials, live orders or real account cash are used.
+- Do not enable real QMT/PTrade until verified corporate actions, exchange calendar, independent benchmark, fee schedule, order-size constraints, walk-forward stability and separate out-of-sample paper validation are completed.
+
+Never conflate a V3 raw coverage PASS, a daily freshness PASS, a research proxy and a broker-fill PASS.

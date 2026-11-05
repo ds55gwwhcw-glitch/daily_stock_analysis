@@ -1,0 +1,117 @@
+name: A-share Daily Incremental Research Refresh
+
+on:
+  push:
+    paths:
+      - .github/workflows/quant-daily-incremental-v1.yml
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Continue latest Shanghai market session
+        required: true
+        default: continue
+        type: choice
+        options: [continue]
+  schedule:
+    - cron: '30 10 * * 1-5'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: ashare-daily-incremental-v1
+  cancel-in-progress: false
+
+env:
+  DAILY_CHUNK_SIZE: '300'
+  SINGLE_STOCK_TIMEOUT: '25'
+  SINGLE_STOCK_MAX_ATTEMPTS: '2'
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install research data dependencies
+        run: pip install 'baostock>=0.9.4' 'pandas>=2.2' 'numpy>=1.26' 'pyarrow>=15'
+      - name: Restore cumulative historical and daily cache
+        uses: actions/cache/restore@v4
+        with:
+          path: quant_research/full_cache
+          key: ashare-shsz-full-v3-daily-${{ github.run_number }}-${{ github.run_attempt }}
+          restore-keys: |
+            ashare-shsz-full-v3-
+      - name: Update one deterministic daily batch
+        run: python quant_research/scripts/daily_incremental_v1.py
+      - name: Commit daily refresh state with safe retries
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add quant_research/state/daily_v1/
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'quant: advance broker-board daily incremental refresh'
+          for attempt in 1 2 3 4 5; do
+            if git fetch origin main; then
+              if ! git rebase origin/main; then
+                git rebase --abort || true
+                exit 1
+              fi
+              if git push origin HEAD:main; then
+                exit 0
+              fi
+            fi
+            sleep $((10 * attempt))
+          done
+          exit 1
+      - name: Save historical cache including today's increments
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: quant_research/full_cache
+          key: ashare-shsz-full-v3-daily-${{ github.run_number }}-${{ github.run_attempt }}
+      - name: Check daily data gate
+        id: gate
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          root=Path("quant_research/state/daily_v1")
+          s=json.loads((root/"progress.json").read_text())
+          g=json.loads((root/"daily_quality_gate.json").read_text())
+          print("terminal="+str(s["terminal"]).lower())
+          print("data_ready="+str(g["status"]=="PASS_RESEARCH_REFRESH").lower())
+          print("asof="+g["asof"])
+          print("remaining="+str(g["error_codes"]))
+          PY
+      - name: Continue the refresh until all eligible codes are handled
+        if: steps.gate.outputs.terminal == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in 1 2 3; do
+            if gh workflow run quant-daily-incremental-v1.yml --ref main -f action=continue; then
+              exit 0
+            fi
+            sleep $((10 * attempt))
+          done
+          exit 1
+      - name: Generate research-only candidate targets after complete refresh
+        if: steps.gate.outputs.terminal == 'true' && steps.gate.outputs.data_ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run quant-walkforward-v1.yml --ref main -f mode=research
+      - name: Save daily QA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-v1-${{ github.run_number }}-${{ github.run_attempt }}
+          path: quant_research/state/daily_v1/
+          retention-days: 14

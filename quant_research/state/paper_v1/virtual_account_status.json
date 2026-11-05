@@ -1,0 +1,8 @@
+{
+  "status": "BLOCKED_BY_FRESHNESS_OR_SIGNAL",
+  "asof": "2026-11-04",
+  "daily_gate": "BLOCKED",
+  "signal_state": "BLOCKED_BY_DAILY_FRESHNESS",
+  "real_orders": false,
+  "hypothetical_fills": false
+}

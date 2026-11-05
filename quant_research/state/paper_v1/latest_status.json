@@ -1,8 +1,8 @@
 {
-  "status": "BLOCKED_BY_DAILY_FRESHNESS",
-  "generated_at_china": "2026-11-05T09:29:32.476755+08:00",
+  "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+  "generated_at_china": "2026-11-05T11:33:59.602840+08:00",
   "signal_asof_date": "2026-11-04",
-  "daily_data_gate": "BLOCKED",
+  "daily_data_gate": "PASS_RESEARCH_REFRESH",
   "daily_data_asof": "2026-11-04",
   "model_oos_periods": 45,
   "candidate_count": 10,

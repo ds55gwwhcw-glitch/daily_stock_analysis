@@ -1,0 +1,30 @@
+{
+  "mode": "RESEARCH_PROXY_NOT_LIVE_OR_PIT_VALIDATED",
+  "oos_from": "2023-01-01",
+  "oos_periods": 45,
+  "factor_columns": [
+    "momentum_252_21",
+    "momentum_63",
+    "reversal_21",
+    "low_vol_60",
+    "log_liquidity_20"
+  ],
+  "holdings_per_period": 10,
+  "net_cumulative_return_proxy": 0.3321446566048487,
+  "equal_weight_benchmark_cumulative_proxy": 0.25043517821340044,
+  "relative_total_return_arithmetic_proxy": 0.08170947839144826,
+  "annualized_return_proxy": 0.07947777005041678,
+  "annualized_vol_proxy": 0.2549727400911392,
+  "annualized_sharpe_proxy": 0.4237593231691773,
+  "max_drawdown_proxy": -0.32904113905289634,
+  "monthly_hit_rate": 0.6222222222222222,
+  "buy_cost_assumption": 0.0015,
+  "sell_cost_assumption": 0.002,
+  "trade_limit_t_plus_one_and_minimum_lot_fully_simulated": false,
+  "realistic_suspension_limit_price_fills_verified": false,
+  "blocked_buy_cash_slots": 2,
+  "blocked_exit_mark_slots": 0,
+  "blocked_exit_capital_carry_verified": false,
+  "methodology_warning": "Blocked buys are cash; blocked exits use stale marked close. Backtest ignores trapped-capital overlap; NOT an executable return.",
+  "point_in_time_adjustment_and_fundamentals_verified": false
+}

@@ -1,8 +1,18 @@
 {
-  "status": "BLOCKED_BY_FRESHNESS_OR_SIGNAL",
+  "status": "VIRTUAL_RESEARCH_LEDGER_NOT_LIVE",
   "asof": "2026-11-04",
-  "daily_gate": "BLOCKED",
-  "signal_state": "BLOCKED_BY_DAILY_FRESHNESS",
-  "real_orders": false,
-  "hypothetical_fills": false
+  "initial_cash_cny": 1000000.0,
+  "equity_cny": 1000000.0,
+  "cash_cny": 1000000.0,
+  "position_count": 0,
+  "virtual_fills_today": 0,
+  "blocked_orders": [],
+  "stale_price_marks": [],
+  "quote_errors": {},
+  "next_monthly_target_pending": false,
+  "real_broker_orders": 0,
+  "real_account_connected": false,
+  "raw_price_corporate_actions_and_execution_verified": false,
+  "limit_guard_is_conservative_approximation": true,
+  "warning": "Virtual price-based ledger only, not tradable PnL or real fills."
 }

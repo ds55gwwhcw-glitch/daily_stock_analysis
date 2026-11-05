@@ -6,6 +6,7 @@ on:
       - .github/workflows/quant-walkforward-v1.yml
       - quant_research/scripts/quant_walkforward_v1.py
       - quant_research/tests/test_quant_walkforward_v1.py
+      - quant_research/scripts/publish_paper_snapshot_v1.py
   workflow_dispatch:
     inputs:
       mode:
@@ -16,7 +17,7 @@ on:
         options: [validate, research]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ashare-walkforward-v1
@@ -47,11 +48,40 @@ jobs:
             ashare-shsz-full-v3-
       - name: Research-gated board audit and walk-forward
         run: python quant_research/scripts/quant_walkforward_v1.py --mode "$MODE"
+      - name: Publish fresh research candidate audit (no orders)
+        if: env.MODE == 'research'
+        run: python quant_research/scripts/publish_paper_snapshot_v1.py
+      - name: Commit lightweight research signal history
+        if: env.MODE == 'research'
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add quant_research/state/paper_v1/
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'quant: save gated research-only candidate snapshot'
+          for attempt in 1 2 3 4 5; do
+            if git fetch origin main; then
+              if ! git rebase origin/main; then
+                git rebase --abort || true
+                exit 1
+              fi
+              if git push origin HEAD:main; then
+                exit 0
+              fi
+            fi
+            sleep $((10 * attempt))
+          done
+          exit 1
       - name: Publish research artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: walkforward-v1-${{ github.run_number }}-${{ github.run_attempt }}
-          path: quant_research/results/walkforward_v1/
+          path: |
+            quant_research/results/walkforward_v1/
+            quant_research/state/paper_v1/
           if-no-files-found: warn
           retention-days: 30

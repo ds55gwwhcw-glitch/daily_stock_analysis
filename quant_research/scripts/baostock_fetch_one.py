@@ -29,6 +29,7 @@ def main() -> int:
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--adjustflag", choices=["1", "2", "3"], default="2")
     args = parser.parse_args()
 
     out = Path(args.output)
@@ -47,7 +48,7 @@ def main() -> int:
             start_date=args.start,
             end_date=args.end,
             frequency="d",
-            adjustflag="2",
+            adjustflag=args.adjustflag,
         )
         raw = rs_to_df(rs)
         raw.to_parquet(out, index=False)

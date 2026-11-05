@@ -127,18 +127,39 @@ def extract_stock(code: str, ipo: str, out: str, signals, entry_dates, exit_date
     exit_map = pd.Series(exit_dates.values, index=signals)
     buy_dates = pd.to_datetime(entry_map.reindex(dates).to_numpy())
     sell_dates = pd.to_datetime(exit_map.reindex(dates).to_numpy())
+    # Research-only mark-to-market proxy: never remove a suspension from OOS.
+    # If the next-session buy cannot execute, keep that slot as cash (zero return).
+    # If the scheduled exit cannot execute, mark at the last available positive
+    # close and disclose the blocked exit. This does NOT free trapped capital or
+    # simulate executable liquidation; model output remains non-tradable.
+    valid_entry = pd.notna(buy_dates)
+    valid_exit = pd.notna(sell_dates)
+    exit_lookup = pd.DatetimeIndex([
+        d if pd.notna(d) else x.index[-1] for d in sell_dates
+    ])
     buys = x["open"].reindex(buy_dates).to_numpy(dtype=float)
-    sells = x["open"].reindex(sell_dates).to_numpy(dtype=float)
+    sells = x["open"].reindex(exit_lookup).to_numpy(dtype=float)
     buy_trade = ((x["tradestatus"].astype(str) == "1")
-                 .reindex(buy_dates).fillna(False).to_numpy())
+                 .reindex(buy_dates).fillna(False).to_numpy(dtype=bool))
     sell_trade = ((x["tradestatus"].astype(str) == "1")
-                  .reindex(sell_dates).fillna(False).to_numpy())
-    labels = np.where((buys > 0) & (sells > 0) & buy_trade & sell_trade,
-                      sells / buys - 1, np.nan)
+                  .reindex(exit_lookup).fillna(False).to_numpy(dtype=bool))
+    executed_buy = valid_entry & buy_trade & np.isfinite(buys) & (buys > 0)
+    executed_sell = valid_exit & sell_trade & np.isfinite(sells) & (sells > 0)
+    marked_close = (close.ffill().reindex(exit_lookup, method="ffill")
+                    .to_numpy(dtype=float))
+    exit_price = np.where(executed_sell, sells, marked_close)
+    label = np.full(len(dates), np.nan, dtype=float)
+    cash_slots = valid_entry & valid_exit & ~executed_buy
+    label[cash_slots] = 0.0
+    held = executed_buy & valid_exit & np.isfinite(exit_price) & (exit_price > 0)
+    label[held] = exit_price[held] / buys[held] - 1
     signal_view["code"] = code
     signal_view["entry_date"] = buy_dates
     signal_view["exit_date"] = sell_dates
-    signal_view["forward_return_proxy"] = labels
+    signal_view["executed_buy_proxy"] = executed_buy
+    signal_view["blocked_buy_proxy"] = cash_slots
+    signal_view["blocked_exit_mark_proxy"] = held & ~executed_sell
+    signal_view["forward_return_proxy"] = label
     signal_view.index.name = "signal_date"
     return signal_view.reset_index()
 
@@ -189,6 +210,7 @@ def ridge(train, alpha=100.0):
 
 def research(panel, latest_date):
     periods, prev, latest_scores = [], set(), None
+    blocked_buys_total, blocked_exits_total = 0, 0
     for dt, group in panel.groupby("signal_date", sort=True):
         # Training labels must already have fully exited before this signal.
         train = panel[(panel["exit_date"] < dt) & panel["forward_return_proxy"].notna()]
@@ -204,18 +226,25 @@ def research(panel, latest_date):
             continue
         top = group.head(HOLDINGS)
         if top["forward_return_proxy"].isna().any():
-            if pd.notna(top["exit_date"].max()) and top["exit_date"].max() <= latest_date:
-                raise RuntimeError(
-                    f"Unfillable OOS holdings {dt.date()}; audit suspensions, never drop losing trades")
-            print(f"Skipping incomplete final OOS period {dt.date()}", flush=True)
-            continue
+            # The final month has no realized future exit. Never invent a label.
+            if top["exit_date"].isna().any():
+                print(f"Incomplete future OOS window {dt.date()}", flush=True)
+                continue
+            raise RuntimeError(
+                f"Unknown mark for OOS positions on {dt.date()}; "
+                "do not silently drop securities")
         gross = float(top["forward_return_proxy"].mean())
+        blocked_buys = int(top["blocked_buy_proxy"].sum())
+        blocked_exits = int(top["blocked_exit_mark_proxy"].sum())
+        blocked_buys_total += blocked_buys
+        blocked_exits_total += blocked_exits
         codes = set(top["code"])
         turnover = 1.0 if not prev else len(codes - prev) / HOLDINGS
         net = gross - turnover * (BUY_COST + SELL_COST)
         periods.append({"signal_date": str(dt.date()), "gross_return": gross,
                         "net_return_proxy": net, "turnover_fraction": turnover,
-                        "holdings": HOLDINGS})
+                        "holdings": HOLDINGS, "blocked_buy_cash_slots": blocked_buys,
+                        "blocked_exit_mark_slots": blocked_exits})
         prev = codes
     if not periods:
         raise RuntimeError("No strict out-of-sample periods")
@@ -238,6 +267,10 @@ def research(panel, latest_date):
         "buy_cost_assumption": BUY_COST, "sell_cost_assumption": SELL_COST,
         "trade_limit_t_plus_one_and_minimum_lot_fully_simulated": False,
         "realistic_suspension_limit_price_fills_verified": False,
+        "blocked_buy_cash_slots": blocked_buys_total,
+        "blocked_exit_mark_slots": blocked_exits_total,
+        "blocked_exit_capital_carry_verified": False,
+        "methodology_warning": "Blocked buys are cash; blocked exits use stale marked close. Backtest ignores trapped-capital overlap; NOT an executable return.",
         "point_in_time_adjustment_and_fundamentals_verified": False,
     }
     perf.to_csv(OUT / "oos_equity_curve.csv", index=False)

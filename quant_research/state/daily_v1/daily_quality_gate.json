@@ -1,0 +1,12 @@
+{
+  "asof": "2026-11-04",
+  "eligible_codes": 4605,
+  "processed_codes": 300,
+  "updated_codes": 299,
+  "error_codes": 1,
+  "anchor_latest_trade_date": null,
+  "anchor_fresh_within_five_days": false,
+  "terminal": false,
+  "status": "BLOCKED",
+  "warning": "Anchor freshness is a heuristic; holidays, corporate actions, limit-up/down and T+1 remain unverified."
+}

@@ -234,6 +234,12 @@ def research(panel, latest_date):
                 f"Unknown mark for OOS positions on {dt.date()}; "
                 "do not silently drop securities")
         gross = float(top["forward_return_proxy"].mean())
+        # Transparent equal-weight same-universe research benchmark.
+        # No ex-post survivor-only filtering: cash slots and marked exits stay in.
+        benchmark_cohort = group["forward_return_proxy"]
+        if benchmark_cohort.isna().any():
+            raise RuntimeError(f"Incomplete universe benchmark at {dt.date()}")
+        benchmark = float(benchmark_cohort.mean())
         blocked_buys = int(top["blocked_buy_proxy"].sum())
         blocked_exits = int(top["blocked_exit_mark_proxy"].sum())
         blocked_buys_total += blocked_buys
@@ -243,13 +249,15 @@ def research(panel, latest_date):
         net = gross - turnover * (BUY_COST + SELL_COST)
         periods.append({"signal_date": str(dt.date()), "gross_return": gross,
                         "net_return_proxy": net, "turnover_fraction": turnover,
-                        "holdings": HOLDINGS, "blocked_buy_cash_slots": blocked_buys,
+                        "holdings": HOLDINGS, "benchmark_equal_weight_proxy": benchmark,
+                        "blocked_buy_cash_slots": blocked_buys,
                         "blocked_exit_mark_slots": blocked_exits})
         prev = codes
     if not periods:
         raise RuntimeError("No strict out-of-sample periods")
     perf = pd.DataFrame(periods)
     perf["equity"] = (1 + perf["net_return_proxy"]).cumprod()
+    perf["benchmark_equity"] = (1 + perf["benchmark_equal_weight_proxy"]).cumprod()
     perf["running_max"] = perf["equity"].cummax()
     dd = perf["equity"] / perf["running_max"] - 1
     ret = perf["net_return_proxy"]
@@ -258,6 +266,8 @@ def research(panel, latest_date):
         "oos_from": str(OOS_START.date()), "oos_periods": int(len(perf)),
         "factor_columns": FACTORS, "holdings_per_period": HOLDINGS,
         "net_cumulative_return_proxy": float(perf["equity"].iloc[-1] - 1),
+        "equal_weight_benchmark_cumulative_proxy": float(perf["benchmark_equity"].iloc[-1] - 1),
+        "relative_total_return_arithmetic_proxy": float(perf["equity"].iloc[-1] - perf["benchmark_equity"].iloc[-1]),
         "annualized_return_proxy": float(perf["equity"].iloc[-1] ** (12 / len(perf)) - 1),
         "annualized_vol_proxy": float(ret.std(ddof=1) * np.sqrt(12)) if len(ret) > 1 else None,
         "annualized_sharpe_proxy": (float(ret.mean() / ret.std(ddof=1) * np.sqrt(12))

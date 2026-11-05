@@ -1,0 +1,14 @@
+{
+  "status": "BLOCKED_BY_DAILY_FRESHNESS",
+  "generated_at_china": "2026-11-05T08:59:30.362840+08:00",
+  "signal_asof_date": "2026-10-30",
+  "daily_data_gate": "MISSING",
+  "daily_data_asof": null,
+  "model_oos_periods": 44,
+  "candidate_count": 10,
+  "adjusted_price_series": true,
+  "account_cash_changed": false,
+  "broker_or_paper_order_sent": false,
+  "executed_positions": false,
+  "warning": "Research candidates, not executable positions or broker-validated trades."
+}

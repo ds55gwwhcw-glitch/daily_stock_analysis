@@ -36,3 +36,57 @@ def test_oos_and_cost_guardrails():
     assert quant.OOS_START == pd.Timestamp("2023-01-01")
     assert quant.HOLDINGS == 10
     assert quant.BUY_COST > 0 and quant.SELL_COST > 0
+
+
+
+def test_suspended_exit_is_marked_not_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(quant, "CACHE", tmp_path)
+    dates = pd.bdate_range("2023-01-02", periods=360)
+    prices = np.linspace(10.0, 20.0, len(dates))
+    data = pd.DataFrame({
+        "date": dates,
+        "open": prices * 0.995,
+        "close": prices,
+        "amount": 100000.0,
+        "volume": 10000.0,
+        "tradestatus": "1",
+        "isST": "0",
+    })
+    data.loc[301, "tradestatus"] = "0"
+    data.loc[301, "open"] = np.nan
+    data.to_parquet(tmp_path / "sh_600000.parquet", index=False)
+    signals = pd.DatetimeIndex([dates[260]])
+    entries = pd.DatetimeIndex([dates[261]])
+    exits = pd.DatetimeIndex([dates[301]])
+    part = quant.extract_stock(
+        "sh.600000", "2000-01-01", "", signals, entries, exits)
+    assert len(part) == 1
+    assert bool(part["executed_buy_proxy"].iloc[0])
+    assert bool(part["blocked_exit_mark_proxy"].iloc[0])
+    assert np.isfinite(part["forward_return_proxy"].iloc[0])
+
+
+def test_unfillable_buy_is_cash_not_survivorship_drop(tmp_path, monkeypatch):
+    monkeypatch.setattr(quant, "CACHE", tmp_path)
+    dates = pd.bdate_range("2023-01-02", periods=360)
+    prices = np.linspace(10.0, 20.0, len(dates))
+    data = pd.DataFrame({
+        "date": dates,
+        "open": prices,
+        "close": prices,
+        "amount": 100000.0,
+        "volume": 10000.0,
+        "tradestatus": "1",
+        "isST": "0",
+    })
+    data.loc[261, "tradestatus"] = "0"
+    data.loc[261, "open"] = np.nan
+    data.to_parquet(tmp_path / "sh_600000.parquet", index=False)
+    part = quant.extract_stock(
+        "sh.600000", "2000-01-01", "",
+        pd.DatetimeIndex([dates[260]]),
+        pd.DatetimeIndex([dates[261]]),
+        pd.DatetimeIndex([dates[301]]))
+    assert len(part) == 1
+    assert bool(part["blocked_buy_proxy"].iloc[0])
+    assert part["forward_return_proxy"].iloc[0] == 0.0

@@ -95,6 +95,10 @@ def main():
     selection = eligible(universe)
     selected_codes = selection["code"].tolist()
     asof = local_asof()
+    # The shared V3 collector defaults to its process-start UTC date. Pin every
+    # child request to the last completed Shanghai close instead, preventing
+    # pre-close/intraday bars from leaking into the daily research cache.
+    base.END_DATE = asof
     state = (json.loads(PROGRESS.read_text(encoding="utf-8"))
              if PROGRESS.exists() else {})
     if state.get("asof") != asof:
@@ -129,6 +133,11 @@ def main():
         row = by_code.loc[code]
         try:
             r = base.collect_one(row)
+            # A restored cache can contain a more recent bar. Do not label that
+            # result valid for an earlier as-of day or silently peek forward.
+            if r["result"] == "ok" and r["max_date"] and r["max_date"] > asof:
+                raise RuntimeError(
+                    f"future_date_in_cache: {code} has {r['max_date']} > asof {asof}")
             updates.append({
                 "code": code, "result": r["result"],
                 "max_date": r["max_date"], "error": r["error"], "asof": asof

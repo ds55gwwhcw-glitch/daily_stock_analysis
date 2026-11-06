@@ -1,12 +1,12 @@
 {
-  "asof": "2026-11-05",
+  "asof": "2026-11-06",
   "eligible_codes": 4605,
-  "processed_codes": 4605,
-  "updated_codes": 4605,
-  "error_codes": 0,
-  "anchor_latest_trade_date": "2026-11-05",
-  "anchor_fresh_within_five_days": true,
-  "terminal": true,
-  "status": "PASS_RESEARCH_REFRESH",
+  "processed_codes": 300,
+  "updated_codes": 267,
+  "error_codes": 33,
+  "anchor_latest_trade_date": null,
+  "anchor_fresh_within_five_days": false,
+  "terminal": false,
+  "status": "BLOCKED",
   "warning": "Anchor freshness is a heuristic; holidays, corporate actions, limit-up/down and T+1 remain unverified."
 }

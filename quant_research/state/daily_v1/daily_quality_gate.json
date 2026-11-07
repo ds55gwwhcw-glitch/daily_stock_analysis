@@ -1,9 +1,9 @@
 {
   "asof": "2026-11-06",
   "eligible_codes": 4605,
-  "processed_codes": 900,
-  "updated_codes": 770,
-  "error_codes": 130,
+  "processed_codes": 1200,
+  "updated_codes": 1058,
+  "error_codes": 142,
   "anchor_latest_trade_date": null,
   "anchor_fresh_within_five_days": false,
   "terminal": false,

@@ -1,7 +1,7 @@
 {
   "asof": "2026-11-06",
-  "phase": "initial",
-  "cursor": 4500,
+  "phase": "retry",
+  "cursor": 4605,
   "retry_cursor": 0,
   "terminal": false,
   "selected_codes": 4605

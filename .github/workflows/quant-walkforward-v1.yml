@@ -60,7 +60,10 @@ jobs:
       - name: Update hypothetical paper account without broker connection
         if: env.MODE == 'research'
         run: python quant_research/scripts/paper_shadow_account_v1.py
-      - name: Generate read-only virtual performance report\n        if: env.MODE == 'research'\n        run: python quant_research/scripts/paper_performance_report_v1.py\n      - name: Commit lightweight research signal history
+      - name: Generate read-only virtual performance report
+        if: env.MODE == 'research'
+        run: python quant_research/scripts/paper_performance_report_v1.py
+      - name: Commit lightweight research signal history
         if: env.MODE == 'research'
         shell: bash
         run: |

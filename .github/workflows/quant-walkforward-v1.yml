@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 320
     env:
-      MODE: ${{ github.event.inputs.mode || 'research' }}
+      MODE: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' && 'validate' || (github.event.inputs.mode || 'research') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

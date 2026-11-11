@@ -107,6 +107,17 @@ def eligible_open(code, q, asof, side):
     return open_price > prev * (1 - limit + 0.003)
 
 
+def settled_for_sale(position, asof):
+    """Fail closed for T+1: missing or same-day acquisition cannot be sold."""
+    if not isinstance(position, dict):
+        return False
+    entry = position.get("entry_asof")
+    try:
+        return bool(entry) and pd.Timestamp(entry) < pd.Timestamp(asof)
+    except (TypeError, ValueError):
+        return False
+
+
 def append_csv(path, rows, columns):
     old = pd.read_csv(path) if path.exists() else pd.DataFrame(columns=columns)
     merged = pd.concat([old, pd.DataFrame(rows, columns=columns)],
@@ -188,8 +199,7 @@ def process():
                 continue
             # A-share T+1: shares acquired today cannot be sold today.
             # Unknown entry dates are not assumed to be settled.
-            entry_asof = positions[code].get("entry_asof")
-            if not entry_asof or entry_asof >= asof:
+            if not settled_for_sale(positions[code], asof):
                 blocked.append({"code": code, "action": "sell",
                                 "reason": "T+1/unknown acquisition date"})
                 continue

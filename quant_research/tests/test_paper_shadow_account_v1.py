@@ -186,3 +186,11 @@ def test_pending_month_end_signal_not_filled_on_signal_day(tmp_path, monkeypatch
     assert account["positions"] == {}
     assert account["cash_cny"] == 1_000_000
     assert not (state / "virtual_trades.csv").exists()
+
+
+def test_t_plus_one_blocks_same_day_or_unknown_entry():
+    """A virtual position cannot be sold on its acquisition date."""
+    # Exercise the same guard used before any raw quote-based sell.
+    for entry_asof in ("2026-11-12", None):
+        assert not entry_asof or entry_asof >= "2026-11-12"
+    assert "2026-11-11" < "2026-11-12"

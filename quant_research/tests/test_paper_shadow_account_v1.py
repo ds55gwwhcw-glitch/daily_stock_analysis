@@ -189,11 +189,18 @@ def test_pending_month_end_signal_not_filled_on_signal_day(tmp_path, monkeypatch
 
 
 def test_t_plus_one_blocks_same_day_or_unknown_entry():
-    """A virtual position cannot be sold on its acquisition date."""
-    # Exercise the same guard used before any raw quote-based sell.
-    for entry_asof in ("2026-11-12", None):
-        assert not entry_asof or entry_asof >= "2026-11-12"
-    assert "2026-11-11" < "2026-11-12"
+    """Exercise the actual sale guard rather than a tautological date assertion."""
+    asof = "2026-11-12"
+    assert mod.settled_for_sale({"entry_asof": "2026-11-11"}, asof)
+    for position in (
+        {"entry_asof": "2026-11-12"},
+        {"entry_asof": "2026-11-13"},
+        {"entry_asof": None},
+        {},
+        {"entry_asof": "invalid"},
+        None,
+    ):
+        assert not mod.settled_for_sale(position, asof)
 
 
 def test_malformed_raw_quotes_fail_closed_without_crashing():

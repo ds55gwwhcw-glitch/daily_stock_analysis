@@ -224,7 +224,7 @@ def test_malformed_raw_quotes_fail_closed_without_crashing():
 def test_unknown_order_side_fails_closed():
     asof = "2026-11-12"
     quote = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
-             "volume": 10000, "tradestatus": "1", "isST": "0"}
+             "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
     assert mod.eligible_open("sh.600000", quote, asof, "buy")
     assert mod.eligible_open("sh.600000", quote, asof, "sell")
     for side in ("BUY", "SELL", "hold", "", None):

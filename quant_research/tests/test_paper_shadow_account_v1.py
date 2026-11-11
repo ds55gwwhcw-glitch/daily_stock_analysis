@@ -228,3 +228,44 @@ def test_unknown_order_side_fails_closed():
     assert mod.eligible_open("sh.600000", quote, asof, "sell")
     for side in ("BUY", "SELL", "hold", "", None):
         assert not mod.eligible_open("sh.600000", quote, asof, side)
+
+
+def test_stale_pending_target_expires_before_any_fill(tmp_path, monkeypatch):
+    """A month-end target older than seven days must not trade after an outage."""
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
+                                 "asof": "2026-12-10"}))
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+        "signal_asof_date": "2026-12-10"}))
+    codes = [f"sz.{x:06d}" for x in range(300001, 300011)]
+    pd.DataFrame({"code": codes}).to_csv(
+        state / "latest_target_candidates.csv", index=False)
+    (state / "account.json").write_text(json.dumps({
+        "initial_cash_cny": 1_000_000, "cash_cny": 1_000_000,
+        "positions": {}, "last_asof": "2026-11-30",
+        "pending": {"signal_asof": "2026-11-30", "codes": codes}
+    }))
+    monkeypatch.setattr(mod, "STATE", state)
+    monkeypatch.setattr(mod, "DAILY", daily)
+    monkeypatch.setattr(mod, "ACCOUNT", state / "account.json")
+    monkeypatch.setattr(mod, "TRADES", state / "virtual_trades.csv")
+    monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
+    monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
+    quote = {"last_quote_day": "2026-12-10", "open": 10,
+             "close": 10, "preclose": 10, "volume": 10000,
+             "tradestatus": "1", "isST": "0"}
+    monkeypatch.setattr(mod, "fetch_raw_quotes",
+                        lambda req, asof: ({code: quote for code in req}, {}))
+    mod.process()
+    account = json.loads((state / "account.json").read_text())
+    audit = json.loads((state / "virtual_account_status.json").read_text())
+    assert account["pending"] is None
+    assert account["positions"] == {}
+    assert account["cash_cny"] == 1_000_000
+    assert not (state / "virtual_trades.csv").exists()
+    assert audit["virtual_fills_today"] == 0
+    assert any("stale pending signal" in x["reason"]
+               for x in audit["blocked_orders"])

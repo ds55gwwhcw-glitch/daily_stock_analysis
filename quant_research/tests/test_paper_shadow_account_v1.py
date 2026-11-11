@@ -291,3 +291,12 @@ def test_board_limit_and_suspension_guards_block_assumed_fills():
     ):
         assert not mod.eligible_open("sh.600000", bad, asof, "buy")
         assert not mod.eligible_open("sh.600000", bad, asof, "sell")
+
+
+def test_unsupported_board_never_eligible_for_assumed_execution():
+    asof = "2026-11-12"
+    quote = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+             "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
+    for code in ("sh.688001", "bj.920001", "sz.200001", "", None):
+        assert not mod.eligible_open(code, quote, asof, "buy")
+        assert not mod.eligible_open(code, quote, asof, "sell")

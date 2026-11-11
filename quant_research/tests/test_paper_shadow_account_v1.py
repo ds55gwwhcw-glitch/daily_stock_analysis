@@ -270,3 +270,24 @@ def test_stale_pending_target_expires_before_any_fill(tmp_path, monkeypatch):
     assert audit["virtual_fills_today"] == 0
     assert any("stale pending signal" in x["reason"]
                for x in audit["blocked_orders"])
+
+
+def test_board_limit_and_suspension_guards_block_assumed_fills():
+    """Quote checks are only conservative guards, not exchange fill proof."""
+    asof = "2026-11-12"
+    q = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+         "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
+    # Mainboard 10% opening limit: refuse to assume a buy at the upper limit.
+    assert not mod.eligible_open("sh.600000", {**q, "open": 11.0}, asof, "buy")
+    # ChiNext 20% limit: a 15% move remains inside the approximate guard.
+    assert mod.eligible_open("sz.300750", {**q, "open": 11.5}, asof, "buy")
+    assert not mod.eligible_open("sz.300750", {**q, "open": 12.0}, asof, "buy")
+    assert not mod.eligible_open("sz.300750", {**q, "open": 8.0}, asof, "sell")
+    # No trading when suspended, without volume, or on an outdated quote.
+    for bad in (
+        {**q, "tradestatus": "0"},
+        {**q, "volume": 0},
+        {**q, "last_quote_day": "2026-11-11"},
+    ):
+        assert not mod.eligible_open("sh.600000", bad, asof, "buy")
+        assert not mod.eligible_open("sh.600000", bad, asof, "sell")

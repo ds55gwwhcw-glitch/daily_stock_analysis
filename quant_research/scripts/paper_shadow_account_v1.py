@@ -81,6 +81,9 @@ def fetch_raw_quotes(codes, asof):
 
 
 def eligible_open(code, q, asof, side):
+    # Unknown actions must fail closed; never interpret them as sells.
+    if side not in {"buy", "sell"}:
+        return False
     if not isinstance(q, dict) or q.get("last_quote_day") != asof:
         return False
     # Missing, malformed or non-finite quotes must block assumed fills,

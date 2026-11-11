@@ -362,3 +362,18 @@ def test_quote_day_and_trading_status_fail_closed_for_both_sides():
     ):
         assert not mod.eligible_open("sh.600000", bad, asof, "buy")
         assert not mod.eligible_open("sh.600000", bad, asof, "sell")
+
+
+def test_malformed_quote_and_invalid_side_fail_closed():
+    """Bad market-data payloads or unknown actions cannot create assumed fills."""
+    asof = "2026-11-12"
+    valid = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+             "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
+    assert mod.eligible_open("sh.600000", valid, asof, "buy")
+    for bad_quote in (None, [], "bad", {}, {**valid, "open": None},
+                      {**valid, "open": "bad"}, {**valid, "volume": float("nan")},
+                      {**valid, "preclose": float("inf")}):
+        assert not mod.eligible_open("sh.600000", bad_quote, asof, "buy")
+        assert not mod.eligible_open("sh.600000", bad_quote, asof, "sell")
+    for invalid_side in ("", "BUY", "hold", None, 1):
+        assert not mod.eligible_open("sh.600000", valid, asof, invalid_side)

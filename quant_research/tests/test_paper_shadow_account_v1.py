@@ -342,3 +342,23 @@ def test_unknown_st_status_blocks_assumed_fills():
         assert not mod.eligible_open("sh.600000", quote, asof, "sell")
     missing = {k: v for k, v in q.items() if k != "isST"}
     assert not mod.eligible_open("sh.600000", missing, asof, "buy")
+
+
+def test_quote_day_and_trading_status_fail_closed_for_both_sides():
+    """No assumed fill when session evidence or tradability is missing."""
+    asof = "2026-11-12"
+    q = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+         "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
+    assert mod.eligible_open("sh.600000", q, asof, "buy")
+    for bad in (
+        {**q, "last_quote_day": None},
+        {**q, "last_quote_day": "2026-11-11"},
+        {**q, "last_quote_day": "2026-11-13"},
+        {**q, "tradestatus": None},
+        {**q, "tradestatus": ""},
+        {**q, "tradestatus": "2"},
+        {**q, "preclose": 0},
+        {**q, "close": -1},
+    ):
+        assert not mod.eligible_open("sh.600000", bad, asof, "buy")
+        assert not mod.eligible_open("sh.600000", bad, asof, "sell")

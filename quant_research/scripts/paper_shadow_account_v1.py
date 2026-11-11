@@ -81,13 +81,19 @@ def fetch_raw_quotes(codes, asof):
 
 
 def eligible_open(code, q, asof, side):
-    if q is None or q.get("last_quote_day") != asof:
+    if not isinstance(q, dict) or q.get("last_quote_day") != asof:
         return False
-    open_price = q.get("open")
-    prev = q.get("preclose")
+    # Missing, malformed or non-finite quotes must block assumed fills,
+    # rather than crashing the account or treating a bad price as tradable.
+    try:
+        open_price = float(q.get("open"))
+        prev = float(q.get("preclose"))
+        volume = float(q.get("volume"))
+    except (TypeError, ValueError, OverflowError):
+        return False
     if not (np.isfinite(open_price) and open_price > 0 and
             np.isfinite(prev) and prev > 0 and
-            np.isfinite(q.get("volume", float("nan"))) and q["volume"] > 0 and
+            np.isfinite(volume) and volume > 0 and
             q.get("tradestatus") == "1"):
         return False
     is_st = q.get("isST") == "1"

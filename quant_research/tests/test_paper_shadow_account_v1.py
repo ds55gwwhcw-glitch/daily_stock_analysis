@@ -207,9 +207,10 @@ def test_malformed_raw_quotes_fail_closed_without_crashing():
     """No virtual fill is allowed from absent or malformed price fields."""
     asof = "2026-11-12"
     valid = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
-             "volume": 10000, "tradestatus": "1", "isST": "0"}
+             "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
     for bad in (
-        None, {}, {**valid, "open": None}, {**valid, "open": "bad"},
+        None, {}, {**valid, "close": None}, {**valid, "close": float("nan")},
+        {**valid, "open": None}, {**valid, "open": "bad"},
         {**valid, "open": float("nan")}, {**valid, "preclose": None},
         {**valid, "volume": None}, {**valid, "volume": "unknown"},
         {**valid, "volume": float("inf")}, {**valid, "volume": 0},

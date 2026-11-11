@@ -185,7 +185,7 @@ def process():
     raw_quotes, quote_errors = fetch_raw_quotes(needed, asof)
     trades, blocked, stale_marks = [], [], []
 
-    # Pending targets are decided at an earlier month-end close. Never
+    # Never execute an old queued target after a prolonged data outage.\n    # Expiry must be checked BEFORE entering the fill loop.\n    if pending and (pd.Timestamp(asof) - pd.Timestamp(pending["signal_asof"])).days > 7:\n        blocked.append({"action": "rebalance", "reason": "stale pending signal >7 calendar days"})\n        pending = None\n\n    # Pending targets are decided at an earlier month-end close. Never
     # execute a signal at an open which occurred before that signal.
     if pending and asof > pending["signal_asof"]:
         desired = set(pending["codes"])

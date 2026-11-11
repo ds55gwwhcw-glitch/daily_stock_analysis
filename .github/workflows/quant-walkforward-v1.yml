@@ -59,7 +59,9 @@ jobs:
         if: env.MODE == 'research'
         run: python quant_research/scripts/paper_shadow_account_v1.py
       - name: Commit lightweight research signal history
-        if: env.MODE == 'research'
+        # Feature-branch validation must never push research state to main.
+        # Artifacts remain available for inspection on non-main runs.
+        if: env.MODE == 'research' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'

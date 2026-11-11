@@ -151,3 +151,38 @@ def test_blocked_daily_gate_never_creates_orders(tmp_path, monkeypatch):
     assert audit["real_orders"] is False
     assert not (state / "account.json").exists()
     assert not (state / "virtual_trades.csv").exists()
+
+
+def test_pending_month_end_signal_not_filled_on_signal_day(tmp_path, monkeypatch):
+    """An existing month-end target cannot fill at that same day's open."""
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
+                                 "asof": "2026-11-30"}))
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+        "signal_asof_date": "2026-11-30"}))
+    codes = [f"sz.{x:06d}" for x in range(300001, 300011)]
+    pd.DataFrame({"code": codes}).to_csv(
+        state / "latest_target_candidates.csv", index=False)
+    (state / "account.json").write_text(json.dumps({
+        "initial_cash_cny": 1_000_000, "cash_cny": 1_000_000,
+        "positions": {}, "last_asof": "2026-11-27",
+        "pending": None
+    }))
+    monkeypatch.setattr(mod, "STATE", state)
+    monkeypatch.setattr(mod, "DAILY", daily)
+    monkeypatch.setattr(mod, "ACCOUNT", state / "account.json")
+    monkeypatch.setattr(mod, "TRADES", state / "virtual_trades.csv")
+    monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
+    monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
+    monkeypatch.setattr(mod, "fetch_raw_quotes", lambda codes, asof: ({}, {}))
+    mod.process()
+    account = json.loads((state / "account.json").read_text())
+    assert account["pending"] == {
+        "signal_asof": "2026-11-30", "codes": codes
+    }
+    assert account["positions"] == {}
+    assert account["cash_cny"] == 1_000_000
+    assert not (state / "virtual_trades.csv").exists()

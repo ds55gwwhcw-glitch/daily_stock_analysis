@@ -300,3 +300,31 @@ def test_unsupported_board_never_eligible_for_assumed_execution():
     for code in ("sh.688001", "bj.920001", "sz.200001", "", None):
         assert not mod.eligible_open(code, quote, asof, "buy")
         assert not mod.eligible_open(code, quote, asof, "sell")
+
+
+def test_mismatched_signal_date_blocks_all_paper_activity(tmp_path, monkeypatch):
+    """A passing data gate does not authorize yesterday's candidate snapshot."""
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
+                                 "asof": "2026-11-11"}))
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+        "signal_asof_date": "2026-11-10"}))
+    monkeypatch.setattr(mod, "STATE", state)
+    monkeypatch.setattr(mod, "DAILY", daily)
+    monkeypatch.setattr(mod, "ACCOUNT", state / "account.json")
+    monkeypatch.setattr(mod, "TRADES", state / "virtual_trades.csv")
+    monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
+    monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
+
+    mod.process()
+    audit = json.loads((state / "virtual_account_status.json").read_text())
+    assert audit["status"] == "BLOCKED_BY_FRESHNESS_OR_SIGNAL"
+    assert audit["asof"] == "2026-11-11"
+    assert audit["signal_state"] == "CANDIDATES_PUBLISHED_RESEARCH_ONLY"
+    assert audit["hypothetical_fills"] is False
+    assert not (state / "account.json").exists()
+    assert not (state / "virtual_trades.csv").exists()
+    assert not (state / "virtual_equity.csv").exists()

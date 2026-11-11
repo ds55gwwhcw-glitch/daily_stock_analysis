@@ -180,6 +180,13 @@ def process():
         for code in list(positions):
             if code in desired:
                 continue
+            # A-share T+1: shares acquired today cannot be sold today.
+            # Unknown entry dates are not assumed to be settled.
+            entry_asof = positions[code].get("entry_asof")
+            if not entry_asof or entry_asof >= asof:
+                blocked.append({"code": code, "action": "sell",
+                                "reason": "T+1/unknown acquisition date"})
+                continue
             quote = raw_quotes.get(code)
             if not eligible_open(code, quote, asof, "sell"):
                 blocked.append({"code": code, "action": "sell", "reason": "suspension/limit/no raw quote"})

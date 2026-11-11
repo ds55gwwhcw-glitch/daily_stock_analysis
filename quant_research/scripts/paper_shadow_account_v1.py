@@ -101,7 +101,10 @@ def eligible_open(code, q, asof, side):
             np.isfinite(close_price) and close_price > 0 and
             q.get("tradestatus") == "1"):
         return False
-    is_st = q.get("isST") == "1"
+    # Unknown ST status changes the applicable price limit; fail closed.
+    if q.get("isST") not in {"0", "1"}:
+        return False
+    is_st = q["isST"] == "1"
     limit = 0.05 if is_st else (0.20 if code.startswith("sz.30") else 0.10)
     # Very conservative approximate opening-price limit guard, not an exchange
     # matching-engine simulator; mainboard/ST rules and IPO days need validation.

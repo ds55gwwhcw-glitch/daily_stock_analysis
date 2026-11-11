@@ -328,3 +328,17 @@ def test_mismatched_signal_date_blocks_all_paper_activity(tmp_path, monkeypatch)
     assert not (state / "account.json").exists()
     assert not (state / "virtual_trades.csv").exists()
     assert not (state / "virtual_equity.csv").exists()
+
+
+def test_unknown_st_status_blocks_assumed_fills():
+    """Never apply a normal price limit when ST status is unknown."""
+    asof = "2026-11-12"
+    q = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+         "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
+    assert mod.eligible_open("sh.600000", q, asof, "buy")
+    for unknown in (None, "", "unknown", "2"):
+        quote = {**q, "isST": unknown}
+        assert not mod.eligible_open("sh.600000", quote, asof, "buy")
+        assert not mod.eligible_open("sh.600000", quote, asof, "sell")
+    missing = {k: v for k, v in q.items() if k != "isST"}
+    assert not mod.eligible_open("sh.600000", missing, asof, "buy")

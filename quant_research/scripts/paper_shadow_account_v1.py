@@ -92,11 +92,13 @@ def eligible_open(code, q, asof, side):
         open_price = float(q.get("open"))
         prev = float(q.get("preclose"))
         volume = float(q.get("volume"))
+        close_price = float(q.get("close"))
     except (TypeError, ValueError, OverflowError):
         return False
     if not (np.isfinite(open_price) and open_price > 0 and
             np.isfinite(prev) and prev > 0 and
             np.isfinite(volume) and volume > 0 and
+            np.isfinite(close_price) and close_price > 0 and
             q.get("tradestatus") == "1"):
         return False
     is_st = q.get("isST") == "1"

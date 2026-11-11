@@ -194,3 +194,20 @@ def test_t_plus_one_blocks_same_day_or_unknown_entry():
     for entry_asof in ("2026-11-12", None):
         assert not entry_asof or entry_asof >= "2026-11-12"
     assert "2026-11-11" < "2026-11-12"
+
+
+def test_malformed_raw_quotes_fail_closed_without_crashing():
+    """No virtual fill is allowed from absent or malformed price fields."""
+    asof = "2026-11-12"
+    valid = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+             "volume": 10000, "tradestatus": "1", "isST": "0"}
+    for bad in (
+        None, {}, {**valid, "open": None}, {**valid, "open": "bad"},
+        {**valid, "open": float("nan")}, {**valid, "preclose": None},
+        {**valid, "volume": None}, {**valid, "volume": "unknown"},
+        {**valid, "volume": float("inf")}, {**valid, "volume": 0},
+        {**valid, "tradestatus": "0"},
+    ):
+        assert not mod.eligible_open("sh.600000", bad, asof, "buy")
+        assert not mod.eligible_open("sh.600000", bad, asof, "sell")
+    assert mod.eligible_open("sh.600000", valid, asof, "buy")

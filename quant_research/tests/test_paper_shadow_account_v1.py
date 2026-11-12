@@ -391,3 +391,21 @@ def test_malformed_quote_and_invalid_side_fail_closed():
         assert not mod.eligible_open("sh.600000", bad_quote, asof, "sell")
     for invalid_side in ("", "BUY", "hold", None, 1):
         assert not mod.eligible_open("sh.600000", valid, asof, invalid_side)
+
+def test_raw_quote_trade_halts_and_price_limit_guard_fail_closed():
+    """Suspensions, zero liquidity, stale quotes and opening limits never fill."""
+    asof = "2026-11-12"
+    quote = {"last_quote_day": asof, "open": 10.0, "close": 10.0,
+             "preclose": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
+    assert mod.eligible_open("sh.600000", quote, asof, "buy")
+    assert mod.eligible_open("sh.600000", quote, asof, "sell")
+    for bad in (
+        {**quote, "tradestatus": "0"},
+        {**quote, "volume": 0},
+        {**quote, "volume": -1},
+        {**quote, "last_quote_day": "2026-11-11"},
+    ):
+        assert not mod.eligible_open("sh.600000", bad, asof, "buy")
+        assert not mod.eligible_open("sh.600000", bad, asof, "sell")
+    assert not mod.eligible_open("sh.600000", {**quote, "open": 11.0}, asof, "buy")
+    assert not mod.eligible_open("sh.600000", {**quote, "open": 9.0}, asof, "sell")

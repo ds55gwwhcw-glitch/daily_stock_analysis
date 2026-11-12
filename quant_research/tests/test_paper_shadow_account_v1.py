@@ -508,3 +508,10 @@ def test_blocked_gate_preserves_existing_paper_ledger(tmp_path, monkeypatch):
     assert equity.read_bytes() == original_equity
     assert not (state / "virtual_trades.csv").exists()
     assert json.loads((state / "virtual_account_status.json").read_text())["status"] == "BLOCKED_BY_FRESHNESS_OR_SIGNAL"
+
+
+def test_weekend_month_end_never_queues_rebalance():
+    """Calendar month-end falling on a weekend is not a trading session."""
+    assert not mod.monthly_signal("2024-11-30")  # Saturday
+    assert not mod.monthly_signal("2024-03-31")  # Sunday
+    assert mod.monthly_signal("2026-11-30")  # Weekday only; exchange holiday unverified

@@ -476,3 +476,35 @@ def test_blocked_gate_is_idempotent_and_never_creates_ledger(tmp_path, monkeypat
         assert audit["real_orders"] is False
         for name in ("account.json", "virtual_trades.csv", "virtual_equity.csv"):
             assert not (state / name).exists()
+
+
+def test_blocked_gate_preserves_existing_paper_ledger(tmp_path, monkeypatch):
+    """A blocked refresh must not mutate a previously recorded paper account."""
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"status": "BLOCKED", "asof": "2026-11-12"}))
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+        "signal_asof_date": "2026-11-11"}))
+    account = state / "account.json"
+    account.write_text(json.dumps({
+        "initial_cash_cny": 1000000, "cash_cny": 900000,
+        "positions": {"sh.600000": {"shares": 10000, "entry_asof": "2026-11-10"}},
+        "last_asof": "2026-11-11", "pending": None}))
+    equity = state / "virtual_equity.csv"
+    equity.write_text("asof,equity_cny\\n2026-11-11,1000000\\n")
+    original_account = account.read_bytes()
+    original_equity = equity.read_bytes()
+    monkeypatch.setattr(mod, "STATE", state)
+    monkeypatch.setattr(mod, "DAILY", daily)
+    monkeypatch.setattr(mod, "ACCOUNT", account)
+    monkeypatch.setattr(mod, "TRADES", state / "virtual_trades.csv")
+    monkeypatch.setattr(mod, "EQUITY", equity)
+    monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
+    for _ in range(2):
+        mod.process()
+    assert account.read_bytes() == original_account
+    assert equity.read_bytes() == original_equity
+    assert not (state / "virtual_trades.csv").exists()
+    assert json.loads((state / "virtual_account_status.json").read_text())["status"] == "BLOCKED_BY_FRESHNESS_OR_SIGNAL"

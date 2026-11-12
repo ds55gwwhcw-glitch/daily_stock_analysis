@@ -409,3 +409,15 @@ def test_raw_quote_trade_halts_and_price_limit_guard_fail_closed():
         assert not mod.eligible_open("sh.600000", bad, asof, "sell")
     assert not mod.eligible_open("sh.600000", {**quote, "open": 11.0}, asof, "buy")
     assert not mod.eligible_open("sh.600000", {**quote, "open": 9.0}, asof, "sell")
+
+
+def test_stale_quotes_and_unlisted_boards_never_assume_fills():
+    """A raw quote from an earlier session or unsupported board is not executable."""
+    asof = "2026-11-12"
+    q = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+         "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
+    for side in ("buy", "sell"):
+        assert not mod.eligible_open("sh.600000", {**q, "last_quote_day": "2026-11-11"}, asof, side)
+        assert not mod.eligible_open("sh.688001", q, asof, side)
+        assert not mod.eligible_open("bj.920001", q, asof, side)
+        assert not mod.eligible_open("invalid", q, asof, side)

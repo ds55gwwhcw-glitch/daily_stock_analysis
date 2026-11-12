@@ -135,6 +135,10 @@ def append_csv(path, rows, columns):
 
 def monthly_signal(date_string):
     d = pd.Timestamp(date_string)
+    # Weekends cannot be exchange sessions; reject them even when the
+    # weekday-based month-end approximation would otherwise trigger.
+    if d.weekday() >= 5:
+        return False
     # Conservative weekday approximation; special exchange holidays remain
     # unverified and may cause a missed (never backfilled) month-end signal.
     return (d + pd.offsets.BDay(1)).month != d.month

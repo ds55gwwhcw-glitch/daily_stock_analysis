@@ -221,6 +221,20 @@ def test_malformed_raw_quotes_fail_closed_without_crashing():
     assert mod.eligible_open("sh.600000", valid, asof, "buy")
 
 
+def test_unknown_st_and_nonpositive_close_fail_closed():
+    """Unknown price-limit classification or bad closing marks prohibit fills."""
+    asof = "2026-11-12"
+    valid = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+             "close": 10.0, "volume": 10000, "tradestatus": "1", "isST": "0"}
+    for changes in (
+        {"isST": None}, {"isST": "unknown"}, {"isST": 0},
+        {"close": 0}, {"close": -1}, {"preclose": 0}, {"open": -1},
+    ):
+        quote = {**valid, **changes}
+        assert not mod.eligible_open("sh.600000", quote, asof, "buy")
+        assert not mod.eligible_open("sh.600000", quote, asof, "sell")
+
+
 def test_unknown_order_side_fails_closed():
     asof = "2026-11-12"
     quote = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,

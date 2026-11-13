@@ -638,3 +638,14 @@ def test_daily_volume_cap_fails_closed_and_rounds_to_board_lot():
               {"volume": float("nan")}, {"volume": float("inf")},
               {"volume": -1000}):
         assert mod.volume_capped_lot(q) == 0
+
+
+def test_volume_participation_cap_rounds_down_and_fails_closed():
+    """A paper fill cannot exceed one percent of observed daily shares."""
+    assert mod.volume_capped_lot({"volume": 1_000_000}) == 10_000
+    assert mod.volume_capped_lot({"volume": 19_999}) == 100
+    assert mod.volume_capped_lot({"volume": 9_999}) == 0
+    for bad in ({}, {"volume": None}, {"volume": "invalid"},
+                {"volume": float("nan")}, {"volume": float("inf")},
+                {"volume": -100}, {"volume": 0}):
+        assert mod.volume_capped_lot(bad) == 0

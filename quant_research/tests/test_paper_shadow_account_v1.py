@@ -649,3 +649,21 @@ def test_volume_participation_cap_rounds_down_and_fails_closed():
                 {"volume": float("nan")}, {"volume": float("inf")},
                 {"volume": -100}, {"volume": 0}):
         assert mod.volume_capped_lot(bad) == 0
+
+
+def test_volume_participation_cap_is_conservative():
+    """The assumed fill size must not exceed 1% of reported daily volume."""
+    assert mod.volume_capped_lot({"volume": 100_000}) == 1_000
+    assert mod.volume_capped_lot({"volume": 9_999}) == 0
+    assert mod.volume_capped_lot({"volume": 10_000}) == 100
+    for invalid in ({}, {"volume": None}, {"volume": "bad"},
+                    {"volume": float("nan")}, {"volume": float("inf")},
+                    {"volume": -100}, {"volume": 0}):
+        assert mod.volume_capped_lot(invalid) == 0
+
+
+def test_weekend_cannot_create_month_end_signal():
+    """Never queue a monthly rebalance from a weekend-only date."""
+    assert not mod.monthly_signal("2026-10-31")
+    assert not mod.monthly_signal("2026-11-01")
+    assert mod.monthly_signal("2026-11-30")

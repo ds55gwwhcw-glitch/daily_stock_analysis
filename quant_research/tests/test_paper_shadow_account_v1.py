@@ -686,3 +686,47 @@ def test_weekday_month_end_does_not_approve_a_holiday():
     # claiming an exchange-holiday calendar has been verified.
     assert not mod.monthly_signal("2027-01-31")
     assert not mod.monthly_signal("2027-02-28")
+
+
+def test_pending_rebalance_cannot_sell_same_day_position(tmp_path, monkeypatch):
+    """Integration guard: a persisted position bought today cannot be sold today."""
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
+                                 "asof": "2026-12-01"}))
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+        "signal_asof_date": "2026-12-01"}))
+    codes = [f"sz.{x:06d}" for x in range(300001, 300011)]
+    pd.DataFrame({"code": codes}).to_csv(
+        state / "latest_target_candidates.csv", index=False)
+    existing = "sh.600000"
+    (state / "account.json").write_text(json.dumps({
+        "initial_cash_cny": 1_000_000, "cash_cny": 900_000,
+        "positions": {existing: {"shares": 10000, "entry_asof": "2026-12-01",
+                                  "last_close": 10, "last_quote_day": "2026-12-01"}},
+        "last_asof": "2026-11-30",
+        "pending": {"signal_asof": "2026-11-30", "codes": codes}
+    }))
+    for key, value in {
+        "STATE": state, "DAILY": daily, "ACCOUNT": state / "account.json",
+        "TRADES": state / "virtual_trades.csv",
+        "EQUITY": state / "virtual_equity.csv",
+        "AUDIT": state / "virtual_account_status.json",
+    }.items():
+        monkeypatch.setattr(mod, key, value)
+    q = {"last_quote_day": "2026-12-01", "open": 10.0, "close": 10.0,
+         "preclose": 10.0, "volume": 10000000,
+         "tradestatus": "1", "isST": "0"}
+    monkeypatch.setattr(mod, "fetch_raw_quotes",
+                        lambda req, asof: ({code: q for code in req}, {}))
+    mod.process()
+    account = json.loads((state / "account.json").read_text())
+    audit = json.loads((state / "virtual_account_status.json").read_text())
+    assert existing in account["positions"]
+    assert any(x.get("code") == existing and "T+1" in x["reason"]
+               for x in audit["blocked_orders"])
+    if (state / "virtual_trades.csv").exists():
+        trades = pd.read_csv(state / "virtual_trades.csv")
+        assert not ((trades["code"] == existing) & (trades["side"] == "SELL")).any()

@@ -167,6 +167,11 @@ def process():
                  if pubpath.exists() else {"status": "MISSING"})
     asof = gate.get("asof")
     if (gate.get("status") != "PASS_RESEARCH_REFRESH" or
+            gate.get("terminal") is not True or
+            not isinstance(gate.get("eligible_codes"), int) or
+            gate.get("eligible_codes") <= 0 or
+            gate.get("processed_codes") != gate.get("eligible_codes") or
+            gate.get("error_codes") != 0 or
             published.get("status") != "CANDIDATES_PUBLISHED_RESEARCH_ONLY" or
             not asof or published.get("signal_asof_date") != asof):
         store_json(AUDIT, {

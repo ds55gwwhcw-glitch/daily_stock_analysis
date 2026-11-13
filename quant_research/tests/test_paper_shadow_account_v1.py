@@ -34,7 +34,7 @@ def test_first_paper_day_only_initializes_cash(tmp_path, monkeypatch):
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-11-05"}))
+                                 "asof": "2026-11-05", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-11-05"}))
@@ -61,7 +61,7 @@ def test_prev_month_signal_filled_only_next_session(tmp_path, monkeypatch):
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-11-02"}))
+                                 "asof": "2026-11-02", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-11-02"}))
@@ -99,7 +99,7 @@ def test_non_month_end_candidate_does_not_create_trade(tmp_path, monkeypatch):
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-11-10"}))
+                                 "asof": "2026-11-10", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-11-10"}))
@@ -159,7 +159,7 @@ def test_pending_month_end_signal_not_filled_on_signal_day(tmp_path, monkeypatch
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-11-30"}))
+                                 "asof": "2026-11-30", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-11-30"}))
@@ -251,7 +251,7 @@ def test_stale_pending_target_expires_before_any_fill(tmp_path, monkeypatch):
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-12-10"}))
+                                 "asof": "2026-12-10", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-12-10"}))
@@ -322,7 +322,7 @@ def test_mismatched_signal_date_blocks_all_paper_activity(tmp_path, monkeypatch)
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-11-11"}))
+                                 "asof": "2026-11-11", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-11-10"}))
@@ -523,7 +523,7 @@ def test_no_quote_or_suspension_never_assumes_a_fill(tmp_path, monkeypatch):
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-12-01"}))
+                                 "asof": "2026-12-01", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-12-01"}))
@@ -589,7 +589,7 @@ def test_corrupt_pending_target_never_fetches_or_fills(tmp_path, monkeypatch):
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-12-01"}))
+                                 "asof": "2026-12-01", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-12-01"}))
@@ -694,7 +694,7 @@ def test_pending_rebalance_cannot_sell_same_day_position(tmp_path, monkeypatch):
     state.mkdir()
     daily = tmp_path / "daily.json"
     daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                 "asof": "2026-12-01"}))
+                                 "asof": "2026-12-01", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
     (state / "latest_status.json").write_text(json.dumps({
         "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
         "signal_asof_date": "2026-12-01"}))
@@ -740,7 +740,7 @@ def test_corrupt_persisted_cash_fails_closed_before_quotes(tmp_path, monkeypatch
         state.mkdir()
         daily = state / "daily.json"
         daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
-                                     "asof": "2026-12-01"}))
+                                     "asof": "2026-12-01", "terminal": True, "eligible_codes": 4605, "processed_codes": 4605, "error_codes": 0}))
         (state / "latest_status.json").write_text(json.dumps({
             "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
             "signal_asof_date": "2026-12-01"}))
@@ -776,3 +776,37 @@ def test_volume_participation_cap_fails_closed_and_rounds_to_lots():
                 {"volume": float("nan")}, {"volume": float("inf")},
                 {"volume": -100}, {"volume": 0}):
         assert mod.volume_capped_lot(bad) == 0
+
+
+def test_paper_gate_rejects_incomplete_or_nonterminal_pass(tmp_path, monkeypatch):
+    """A mislabeled PASS must not create assumed orders or account entries."""
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+        "signal_asof_date": "2026-12-01"}))
+    monkeypatch.setattr(mod, "STATE", state)
+    monkeypatch.setattr(mod, "DAILY", daily)
+    monkeypatch.setattr(mod, "ACCOUNT", state / "account.json")
+    monkeypatch.setattr(mod, "TRADES", state / "virtual_trades.csv")
+    monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
+    monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
+    for overrides in (
+        {"terminal": False},
+        {"processed_codes": 4604},
+        {"error_codes": 1},
+        {"eligible_codes": 0},
+        {"terminal": None},
+    ):
+        gate = {"status": "PASS_RESEARCH_REFRESH", "asof": "2026-12-01",
+                "terminal": True, "eligible_codes": 4605,
+                "processed_codes": 4605, "error_codes": 0}
+        gate.update(overrides)
+        daily.write_text(json.dumps(gate))
+        mod.process()
+        audit = json.loads((state / "virtual_account_status.json").read_text())
+        assert audit["status"] == "BLOCKED_BY_FRESHNESS_OR_SIGNAL"
+        assert audit["hypothetical_fills"] is False
+        assert not (state / "account.json").exists()
+        assert not (state / "virtual_trades.csv").exists()

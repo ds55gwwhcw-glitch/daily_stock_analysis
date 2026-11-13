@@ -188,6 +188,20 @@ def process():
 
     positions = account["positions"]
     pending = account.get("pending")
+    # Persisted pending orders are untrusted state. Corrupt targets must not fill.
+    if pending is not None:
+        pending_codes = pending.get("codes") if isinstance(pending, dict) else None
+        signal_date = pending.get("signal_asof") if isinstance(pending, dict) else None
+        try:
+            valid_signal_date = (bool(signal_date) and
+                                 pd.Timestamp(signal_date) <= pd.Timestamp(asof))
+        except (TypeError, ValueError, OverflowError):
+            valid_signal_date = False
+        if (not isinstance(pending_codes, list) or len(pending_codes) != 10 or
+                len(set(pending_codes)) != 10 or
+                not all(isinstance(c, str) and permitted(c) for c in pending_codes) or
+                not valid_signal_date):
+            raise RuntimeError("Invalid persisted pending target; refusing paper execution")
     needed = set(positions)
     if pending is not None:
         needed.update(pending.get("codes", []))

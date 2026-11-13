@@ -213,7 +213,7 @@ def process():
         if (not isinstance(pending_codes, list) or len(pending_codes) != 10 or
                 len(set(pending_codes)) != 10 or
                 not all(isinstance(c, str) and permitted(c) for c in pending_codes) or
-                not valid_signal_date):
+                not valid_signal_date or not monthly_signal(signal_date)):
             raise RuntimeError("Invalid persisted pending target; refusing paper execution")
     needed = set(positions)
     if pending is not None:

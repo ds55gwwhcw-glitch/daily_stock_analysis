@@ -515,3 +515,45 @@ def test_weekend_month_end_never_queues_rebalance():
     assert not mod.monthly_signal("2024-11-30")  # Saturday
     assert not mod.monthly_signal("2024-03-31")  # Sunday
     assert mod.monthly_signal("2026-11-30")  # Weekday only; exchange holiday unverified
+
+
+def test_no_quote_or_suspension_never_assumes_a_fill(tmp_path, monkeypatch):
+    """An eligible pending rebalance cannot manufacture trades without liquidity."""
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
+                                 "asof": "2026-12-01"}))
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+        "signal_asof_date": "2026-12-01"}))
+    codes = [f"sz.{x:06d}" for x in range(300001, 300011)]
+    pd.DataFrame({"code": codes}).to_csv(
+        state / "latest_target_candidates.csv", index=False)
+    (state / "account.json").write_text(json.dumps({
+        "initial_cash_cny": 1_000_000, "cash_cny": 1_000_000,
+        "positions": {}, "last_asof": "2026-11-30",
+        "pending": {"signal_asof": "2026-11-30", "codes": codes}
+    }))
+    for attr, path in {
+        "STATE": state, "DAILY": daily, "ACCOUNT": state / "account.json",
+        "TRADES": state / "virtual_trades.csv",
+        "EQUITY": state / "virtual_equity.csv",
+        "AUDIT": state / "virtual_account_status.json",
+    }.items():
+        monkeypatch.setattr(mod, attr, path)
+    suspended = {"last_quote_day": "2026-12-01", "open": 10,
+                 "close": 10, "preclose": 10, "volume": 0,
+                 "tradestatus": "0", "isST": "0"}
+    monkeypatch.setattr(mod, "fetch_raw_quotes",
+                        lambda req, asof: ({codes[0]: suspended},
+                                           {c: "quote_missing" for c in codes[1:]}))
+    mod.process()
+    account = json.loads((state / "account.json").read_text())
+    audit = json.loads((state / "virtual_account_status.json").read_text())
+    assert account["cash_cny"] == 1_000_000
+    assert account["positions"] == {}
+    assert account["pending"]["signal_asof"] == "2026-11-30"
+    assert audit["virtual_fills_today"] == 0
+    assert len(audit["blocked_orders"]) == 10
+    assert not (state / "virtual_trades.csv").exists()

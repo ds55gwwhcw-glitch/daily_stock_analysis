@@ -765,3 +765,14 @@ def test_corrupt_persisted_cash_fails_closed_before_quotes(tmp_path, monkeypatch
             mod.process()
         assert not (state / "virtual_trades.csv").exists()
         assert not (state / "virtual_equity.csv").exists()
+
+
+def test_volume_participation_cap_fails_closed_and_rounds_to_lots():
+    """An assumed fill may not exceed 1% of reported daily shares."""
+    assert mod.volume_capped_lot({"volume": 100_000}) == 1_000
+    assert mod.volume_capped_lot({"volume": 19_999}) == 100
+    assert mod.volume_capped_lot({"volume": 9_999}) == 0
+    for bad in ({}, {"volume": None}, {"volume": "bad"},
+                {"volume": float("nan")}, {"volume": float("inf")},
+                {"volume": -100}, {"volume": 0}):
+        assert mod.volume_capped_lot(bad) == 0

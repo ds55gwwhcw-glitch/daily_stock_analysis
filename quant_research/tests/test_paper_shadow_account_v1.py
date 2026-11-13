@@ -580,3 +580,50 @@ def test_open_limit_and_suspension_guards_both_sides():
                 {"last_quote_day": "2026-11-11"}):
         assert not mod.eligible_open("sh.600000", {**base, **bad}, asof, "buy")
         assert not mod.eligible_open("sh.600000", {**base, **bad}, asof, "sell")
+
+
+def test_corrupt_pending_target_never_fetches_or_fills(tmp_path, monkeypatch):
+    """Invalid persisted targets fail closed before any price request."""
+    import pytest
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
+                                 "asof": "2026-12-01"}))
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+        "signal_asof_date": "2026-12-01"}))
+    codes = [f"sz.{x:06d}" for x in range(300001, 300011)]
+    pd.DataFrame({"code": codes}).to_csv(
+        state / "latest_target_candidates.csv", index=False)
+    monkeypatch.setattr(mod, "STATE", state)
+    monkeypatch.setattr(mod, "DAILY", daily)
+    monkeypatch.setattr(mod, "ACCOUNT", state / "account.json")
+    monkeypatch.setattr(mod, "TRADES", state / "virtual_trades.csv")
+    monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
+    monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
+
+    def unexpected_quote_fetch(*args):
+        raise AssertionError("Invalid target must not request quotes")
+    monkeypatch.setattr(mod, "fetch_raw_quotes", unexpected_quote_fetch)
+    bad_targets = [
+        {"signal_asof": "2026-11-30", "codes": codes[:9]},
+        {"signal_asof": "2026-11-30", "codes": codes[:9] + [codes[0]]},
+        {"signal_asof": "2026-11-30", "codes": codes[:9] + ["sh.688001"]},
+        {"signal_asof": "2026-12-02", "codes": codes},
+        {"signal_asof": "invalid", "codes": codes},
+        {"signal_asof": None, "codes": codes},
+        {"codes": codes},
+        {"signal_asof": "2026-11-30", "codes": None},
+        "corrupted",
+    ]
+    for pending in bad_targets:
+        original = {"initial_cash_cny": 1000000, "cash_cny": 1000000,
+                    "positions": {}, "last_asof": "2026-11-30",
+                    "pending": pending}
+        (state / "account.json").write_text(json.dumps(original))
+        with pytest.raises(RuntimeError, match="Invalid persisted pending target"):
+            mod.process()
+        assert json.loads((state / "account.json").read_text()) == original
+        assert not (state / "virtual_trades.csv").exists()
+        assert not (state / "virtual_equity.csv").exists()

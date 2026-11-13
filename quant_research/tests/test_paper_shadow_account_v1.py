@@ -557,3 +557,26 @@ def test_no_quote_or_suspension_never_assumes_a_fill(tmp_path, monkeypatch):
     assert audit["virtual_fills_today"] == 0
     assert len(audit["blocked_orders"]) == 10
     assert not (state / "virtual_trades.csv").exists()
+
+
+def test_weekend_cannot_generate_month_end_target():
+    """A non-session Saturday/Sunday must never enqueue a month-end target."""
+    assert not mod.monthly_signal("2026-10-31")
+    assert not mod.monthly_signal("2026-11-01")
+    assert mod.monthly_signal("2026-11-30")
+
+
+def test_open_limit_and_suspension_guards_both_sides():
+    """Reject hypothetical fills when daily volume or opening limit is unsafe."""
+    asof = "2026-11-12"
+    base = {"last_quote_day": asof, "open": 10.0, "preclose": 10.0,
+            "close": 10.0, "volume": 10000, "tradestatus": "1",
+            "isST": "0"}
+    assert not mod.eligible_open("sh.600000", {**base, "open": 11.0}, asof, "buy")
+    assert not mod.eligible_open("sh.600000", {**base, "open": 9.0}, asof, "sell")
+    assert not mod.eligible_open("sz.300750", {**base, "open": 12.0}, asof, "buy")
+    assert not mod.eligible_open("sz.300750", {**base, "open": 8.0}, asof, "sell")
+    for bad in ({"tradestatus": "0"}, {"volume": 0},
+                {"last_quote_day": "2026-11-11"}):
+        assert not mod.eligible_open("sh.600000", {**base, **bad}, asof, "buy")
+        assert not mod.eligible_open("sh.600000", {**base, **bad}, asof, "sell")

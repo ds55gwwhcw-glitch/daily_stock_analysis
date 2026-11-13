@@ -627,3 +627,14 @@ def test_corrupt_pending_target_never_fetches_or_fills(tmp_path, monkeypatch):
         assert json.loads((state / "account.json").read_text()) == original
         assert not (state / "virtual_trades.csv").exists()
         assert not (state / "virtual_equity.csv").exists()
+
+
+def test_daily_volume_cap_fails_closed_and_rounds_to_board_lot():
+    """One percent of actual share volume caps hypothetical fills."""
+    assert mod.volume_capped_lot({"volume": 100000}) == 1000
+    assert mod.volume_capped_lot({"volume": 10000}) == 100
+    assert mod.volume_capped_lot({"volume": 9999}) == 0
+    for q in ({}, {"volume": None}, {"volume": "bad"},
+              {"volume": float("nan")}, {"volume": float("inf")},
+              {"volume": -1000}):
+        assert mod.volume_capped_lot(q) == 0

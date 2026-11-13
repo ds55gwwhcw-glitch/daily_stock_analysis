@@ -667,3 +667,22 @@ def test_weekend_cannot_create_month_end_signal():
     assert not mod.monthly_signal("2026-10-31")
     assert not mod.monthly_signal("2026-11-01")
     assert mod.monthly_signal("2026-11-30")
+
+
+def test_t_plus_one_rejects_same_day_future_and_unknown_acquisitions():
+    """A position is sellable only after its recorded acquisition session."""
+    asof = "2026-12-01"
+    assert mod.settled_for_sale({"entry_asof": "2026-11-30"}, asof)
+    for entry in (asof, "2026-12-02", None, "", "invalid"):
+        assert not mod.settled_for_sale({"entry_asof": entry}, asof)
+    assert not mod.settled_for_sale({}, asof)
+    assert not mod.settled_for_sale(None, asof)
+
+
+def test_weekday_month_end_does_not_approve_a_holiday():
+    """Document the known calendar limitation rather than assuming proof."""
+    # The current implementation is only a weekday approximation; this
+    # regression test intentionally asserts weekends are rejected, without
+    # claiming an exchange-holiday calendar has been verified.
+    assert not mod.monthly_signal("2027-01-31")
+    assert not mod.monthly_signal("2027-02-28")

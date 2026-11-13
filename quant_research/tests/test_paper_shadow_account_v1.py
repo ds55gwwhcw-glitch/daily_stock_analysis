@@ -730,3 +730,38 @@ def test_pending_rebalance_cannot_sell_same_day_position(tmp_path, monkeypatch):
     if (state / "virtual_trades.csv").exists():
         trades = pd.read_csv(state / "virtual_trades.csv")
         assert not ((trades["code"] == existing) & (trades["side"] == "SELL")).any()
+
+
+def test_corrupt_persisted_cash_fails_closed_before_quotes(tmp_path, monkeypatch):
+    """Corrupt ledger cash cannot become an assumed order or equity mark."""
+    import pytest
+    for bad_cash in (-1, float("nan"), float("inf"), "not-a-number"):
+        state = tmp_path / ("case_" + str(bad_cash).replace("-", "neg"))
+        state.mkdir()
+        daily = state / "daily.json"
+        daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH",
+                                     "asof": "2026-12-01"}))
+        (state / "latest_status.json").write_text(json.dumps({
+            "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
+            "signal_asof_date": "2026-12-01"}))
+        codes = [f"sz.{x:06d}" for x in range(300001, 300011)]
+        pd.DataFrame({"code": codes}).to_csv(
+            state / "latest_target_candidates.csv", index=False)
+        account_path = state / "account.json"
+        account_path.write_text(json.dumps({
+            "initial_cash_cny": 1000000, "cash_cny": bad_cash,
+            "positions": {}, "last_asof": "2026-11-30",
+            "pending": {"signal_asof": "2026-11-30", "codes": codes}}))
+        monkeypatch.setattr(mod, "STATE", state)
+        monkeypatch.setattr(mod, "DAILY", daily)
+        monkeypatch.setattr(mod, "ACCOUNT", account_path)
+        monkeypatch.setattr(mod, "TRADES", state / "virtual_trades.csv")
+        monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
+        monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
+        monkeypatch.setattr(mod, "fetch_raw_quotes",
+                            lambda *_: (_ for _ in ()).throw(
+                                AssertionError("quotes must not be fetched")))
+        with pytest.raises(RuntimeError, match="Invalid persisted paper cash"):
+            mod.process()
+        assert not (state / "virtual_trades.csv").exists()
+        assert not (state / "virtual_equity.csv").exists()

@@ -199,6 +199,32 @@ def process():
     if account.get("last_asof") and asof < account["last_asof"]:
         raise RuntimeError("Refusing to reverse paper-account chronology")
 
+    # Persisted cash and holdings are untrusted; reject corrupt balances before
+    # fetching quotes or generating any assumed fills.
+    try:
+        cash = float(account["cash_cny"])
+        initial = float(account["initial_cash_cny"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise RuntimeError("Invalid persisted paper cash balance") from exc
+    if not (np.isfinite(cash) and cash >= 0 and
+            np.isfinite(initial) and initial >= 10000):
+        raise RuntimeError("Invalid persisted paper cash balance")
+    if not isinstance(account.get("positions"), dict):
+        raise RuntimeError("Invalid persisted paper positions")
+    for code, position in account["positions"].items():
+        if not permitted(code) or not isinstance(position, dict):
+            raise RuntimeError("Invalid persisted paper position")
+        shares = position.get("shares")
+        if (isinstance(shares, bool) or not isinstance(shares, int) or
+                shares <= 0 or shares % LOT != 0):
+            raise RuntimeError("Invalid persisted paper position shares")
+        try:
+            mark = float(position["last_close"])
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise RuntimeError("Invalid persisted paper position mark") from exc
+        if not np.isfinite(mark) or mark <= 0:
+            raise RuntimeError("Invalid persisted paper position mark")
+
     positions = account["positions"]
     pending = account.get("pending")
     # Persisted pending orders are untrusted state. Corrupt targets must not fill.

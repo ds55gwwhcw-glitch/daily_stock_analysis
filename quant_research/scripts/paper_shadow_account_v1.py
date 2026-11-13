@@ -33,6 +33,19 @@ BUY_FEE = 0.0015
 SELL_FEE = 0.002
 TIMEOUT = 45
 LOT = 100
+# A deliberately conservative daily-volume participation cap for assumed fills.
+MAX_VOLUME_PARTICIPATION = 0.01
+
+
+def volume_capped_lot(q):
+    """Maximum assumed executable shares; malformed volume fails closed."""
+    try:
+        volume = float(q["volume"])
+    except (TypeError, ValueError, OverflowError, KeyError):
+        return 0
+    if not np.isfinite(volume) or volume <= 0:
+        return 0
+    return math.floor(volume * MAX_VOLUME_PARTICIPATION / LOT) * LOT
 
 
 def store_json(path, obj):
@@ -239,6 +252,10 @@ def process():
                 blocked.append({"code": code, "action": "sell", "reason": "suspension/limit/no raw quote"})
                 continue
             shares = int(positions[code]["shares"])
+            if shares > volume_capped_lot(quote):
+                blocked.append({"code": code, "action": "sell",
+                                "reason": "position exceeds 1% daily-volume cap; partial sale not modeled"})
+                continue
             gross = shares * quote["open"]
             fee = gross * SELL_FEE
             account["cash_cny"] += gross - fee
@@ -257,6 +274,7 @@ def process():
                 continue
             budget = min(account["cash_cny"], nav_open * 0.1)
             shares = math.floor(budget / (quote["open"] * (1 + BUY_FEE)) / LOT) * LOT
+            shares = min(shares, volume_capped_lot(quote))
             if shares < LOT:
                 blocked.append({"code": code, "action": "buy", "reason": "no 100-share lot funding"})
                 continue

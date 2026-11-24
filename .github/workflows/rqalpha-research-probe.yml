@@ -2,7 +2,7 @@ name: RQAlpha isolated compatibility probe
 on:
   push:
     branches: [feature/paper-execution-safety-v1]
-    paths: ['.github/workflows/rqalpha-research-probe.yml', 'quant_research/scripts/paper_calendar_provider_v1.py']
+    paths: ['.github/workflows/rqalpha-research-probe.yml', 'quant_research/scripts/paper_calendar_provider_v1.py', 'quant_research/scripts/paper_rqalpha_match_probe_v1.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -98,6 +98,7 @@ jobs:
                   assert float(q.iloc[0][field]) > 0
               print("BAOSTOCK_SESSION_COUNT", len(sessions))
               print("RAW_QUOTE", q.to_json(orient="records"))
+              q.to_json("/tmp/rqalpha_raw_quote.json", orient="records")
               print("REAL_PROVIDER_PROBE_ONLY; exchange cross-check and execution not verified")
           finally:
               bs.logout()
@@ -128,3 +129,26 @@ jobs:
           print("PROVIDER_OK")
           PY
           python -m pytest -q quant_research/tests/test_paper_exchange_calendar_v1.py quant_research/tests/test_paper_shadow_account_v1.py quant_research/tests/test_paper_volume_cap_v1.py
+      - name: Exercise actual matcher using historical raw quote
+        run: |
+          PYTHONPATH=quant_research/scripts python - <<'PY'
+          import json
+          from paper_rqalpha_match_probe_v1 import match_probe
+          from paper_shadow_account_v1 import eligible_open
+          from decimal import Decimal
+          q = json.load(open("/tmp/rqalpha_raw_quote.json"))[0]
+          q["last_quote_day"] = q["date"]
+          assert q["adjustflag"] == "3"
+          assert eligible_open("sh.600000", q, q["date"], "buy")
+          result = match_probe(float(q["open"]), float(q["volume"]))
+          shares = result["shares"]
+          price = Decimal(str(result["price"]))
+          gross = price * shares
+          fee = gross * Decimal("0.0015")
+          cash = Decimal("1000000") - gross - fee
+          equity = cash + Decimal(str(q["close"])) * shares
+          assert shares == 100 and cash >= 0
+          assert equity - Decimal("1000000") == (Decimal(str(q["close"]))-price)*shares-fee
+          print(json.dumps({"test_only": True, "shares": shares, "cash": str(cash),
+              "fee": str(fee), "equity": str(equity), "matching": result}))
+          PY

@@ -146,15 +146,9 @@ def append_csv(path, rows, columns):
     merged.to_csv(path, index=False)
 
 
-def monthly_signal(date_string):
-    d = pd.Timestamp(date_string)
-    # Weekends cannot be exchange sessions; reject them even when the
-    # weekday-based month-end approximation would otherwise trigger.
-    if d.weekday() >= 5:
-        return False
-    # Conservative weekday approximation; special exchange holidays remain
-    # unverified and may cause a missed (never backfilled) month-end signal.
-    return (d + pd.offsets.BDay(1)).month != d.month
+def monthly_signal(date_string, sessions):
+    from paper_exchange_calendar_v1 import month_end_signal
+    return month_end_signal(date_string, sessions)
 
 
 def process(calendar_sessions=None):
@@ -183,21 +177,18 @@ def process(calendar_sessions=None):
         })
         return
 
-    # Production entry point requires a provider calendar; tests can inject fixtures.
-    # Fail closed before any account mutation if calendar coverage is unavailable.
-    if calendar_sessions is not None:
-        from paper_calendar_provider_v1 import decision_from_sessions
-        def signal(day):
-            return decision_from_sessions(day, calendar_sessions)
-        try:
-            signal(asof)
-        except (ValueError, TypeError) as exc:
-            store_json(AUDIT, {"status": "BLOCKED_BY_CALENDAR", "asof": asof,
-                               "reason": str(exc), "hypothetical_fills": False,
-                               "real_orders": False})
-            return
-    else:
-        signal = monthly_signal  # legacy offline test path only
+    # Every caller, including offline tests, must supply explicit sessions.
+    def signal(day):
+        return monthly_signal(day, calendar_sessions)
+    try:
+        if not calendar_sessions or asof not in calendar_sessions:
+            raise ValueError("Missing current exchange session")
+        signal(asof)
+    except (ValueError, TypeError) as exc:
+        store_json(AUDIT, {"status": "BLOCKED_BY_CALENDAR", "asof": asof,
+                           "reason": str(exc), "hypothetical_fills": False,
+                           "real_orders": False})
+        return
 
     target_file = STATE / "latest_target_candidates.csv"
     candidates = pd.read_csv(target_file, dtype={"code": str})

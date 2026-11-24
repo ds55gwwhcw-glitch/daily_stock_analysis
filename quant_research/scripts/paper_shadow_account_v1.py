@@ -33,6 +33,19 @@ BUY_FEE = 0.0015
 SELL_FEE = 0.002
 TIMEOUT = 45
 LOT = 100
+# A deliberately conservative daily-volume participation cap for assumed fills.
+MAX_VOLUME_PARTICIPATION = 0.01
+
+
+def volume_capped_lot(q):
+    """Maximum assumed executable shares; malformed volume fails closed."""
+    try:
+        volume = float(q["volume"])
+    except (TypeError, ValueError, OverflowError, KeyError):
+        return 0
+    if not np.isfinite(volume) or volume <= 0:
+        return 0
+    return math.floor(volume * MAX_VOLUME_PARTICIPATION / LOT) * LOT
 
 
 def store_json(path, obj):
@@ -81,16 +94,30 @@ def fetch_raw_quotes(codes, asof):
 
 
 def eligible_open(code, q, asof, side):
-    if q is None or q.get("last_quote_day") != asof:
+    # Unknown actions must fail closed; never interpret them as sells.
+    if side not in {"buy", "sell"} or not isinstance(code, str) or not permitted(code):
         return False
-    open_price = q.get("open")
-    prev = q.get("preclose")
+    if not isinstance(q, dict) or q.get("last_quote_day") != asof:
+        return False
+    # Missing, malformed or non-finite quotes must block assumed fills,
+    # rather than crashing the account or treating a bad price as tradable.
+    try:
+        open_price = float(q.get("open"))
+        prev = float(q.get("preclose"))
+        volume = float(q.get("volume"))
+        close_price = float(q.get("close"))
+    except (TypeError, ValueError, OverflowError):
+        return False
     if not (np.isfinite(open_price) and open_price > 0 and
             np.isfinite(prev) and prev > 0 and
-            np.isfinite(q.get("volume", float("nan"))) and q["volume"] > 0 and
+            np.isfinite(volume) and volume > 0 and
+            np.isfinite(close_price) and close_price > 0 and
             q.get("tradestatus") == "1"):
         return False
-    is_st = q.get("isST") == "1"
+    # Unknown ST status changes the applicable price limit; fail closed.
+    if q.get("isST") not in {"0", "1"}:
+        return False
+    is_st = q["isST"] == "1"
     limit = 0.05 if is_st else (0.20 if code.startswith("sz.30") else 0.10)
     # Very conservative approximate opening-price limit guard, not an exchange
     # matching-engine simulator; mainboard/ST rules and IPO days need validation.
@@ -101,6 +128,17 @@ def eligible_open(code, q, asof, side):
     return open_price > prev * (1 - limit + 0.003)
 
 
+def settled_for_sale(position, asof):
+    """Fail closed for T+1: missing or same-day acquisition cannot be sold."""
+    if not isinstance(position, dict):
+        return False
+    entry = position.get("entry_asof")
+    try:
+        return bool(entry) and pd.Timestamp(entry) < pd.Timestamp(asof)
+    except (TypeError, ValueError):
+        return False
+
+
 def append_csv(path, rows, columns):
     old = pd.read_csv(path) if path.exists() else pd.DataFrame(columns=columns)
     merged = pd.concat([old, pd.DataFrame(rows, columns=columns)],
@@ -108,14 +146,12 @@ def append_csv(path, rows, columns):
     merged.to_csv(path, index=False)
 
 
-def monthly_signal(date_string):
-    d = pd.Timestamp(date_string)
-    # Conservative weekday approximation; special exchange holidays remain
-    # unverified and may cause a missed (never backfilled) month-end signal.
-    return (d + pd.offsets.BDay(1)).month != d.month
+def monthly_signal(date_string, sessions):
+    from paper_exchange_calendar_v1 import month_end_signal
+    return month_end_signal(date_string, sessions)
 
 
-def process():
+def process(calendar_sessions=None):
     STATE.mkdir(parents=True, exist_ok=True)
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     gate = (json.loads(DAILY.read_text(encoding="utf-8"))
@@ -125,6 +161,11 @@ def process():
                  if pubpath.exists() else {"status": "MISSING"})
     asof = gate.get("asof")
     if (gate.get("status") != "PASS_RESEARCH_REFRESH" or
+            gate.get("terminal") is not True or
+            not isinstance(gate.get("eligible_codes"), int) or
+            gate.get("eligible_codes") <= 0 or
+            gate.get("processed_codes") != gate.get("eligible_codes") or
+            gate.get("error_codes") != 0 or
             published.get("status") != "CANDIDATES_PUBLISHED_RESEARCH_ONLY" or
             not asof or published.get("signal_asof_date") != asof):
         store_json(AUDIT, {
@@ -134,6 +175,19 @@ def process():
             "signal_state": published.get("status"),
             "real_orders": False, "hypothetical_fills": False,
         })
+        return
+
+    # Every caller, including offline tests, must supply explicit sessions.
+    def signal(day):
+        return monthly_signal(day, calendar_sessions)
+    try:
+        if not calendar_sessions or asof not in calendar_sessions:
+            raise ValueError("Missing current exchange session")
+        signal(asof)
+    except (ValueError, TypeError) as exc:
+        store_json(AUDIT, {"status": "BLOCKED_BY_CALENDAR", "asof": asof,
+                           "reason": str(exc), "hypothetical_fills": False,
+                           "real_orders": False})
         return
 
     target_file = STATE / "latest_target_candidates.csv"
@@ -157,13 +211,58 @@ def process():
     if account.get("last_asof") and asof < account["last_asof"]:
         raise RuntimeError("Refusing to reverse paper-account chronology")
 
+    # Persisted cash and holdings are untrusted; reject corrupt balances before
+    # fetching quotes or generating any assumed fills.
+    try:
+        cash = float(account["cash_cny"])
+        initial = float(account["initial_cash_cny"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise RuntimeError("Invalid persisted paper cash balance") from exc
+    if not (np.isfinite(cash) and cash >= 0 and
+            np.isfinite(initial) and initial >= 10000):
+        raise RuntimeError("Invalid persisted paper cash balance")
+    if not isinstance(account.get("positions"), dict):
+        raise RuntimeError("Invalid persisted paper positions")
+    for code, position in account["positions"].items():
+        if not permitted(code) or not isinstance(position, dict):
+            raise RuntimeError("Invalid persisted paper position")
+        shares = position.get("shares")
+        if (isinstance(shares, bool) or not isinstance(shares, int) or
+                shares <= 0 or shares % LOT != 0):
+            raise RuntimeError("Invalid persisted paper position shares")
+        try:
+            mark = float(position["last_close"])
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise RuntimeError("Invalid persisted paper position mark") from exc
+        if not np.isfinite(mark) or mark <= 0:
+            raise RuntimeError("Invalid persisted paper position mark")
+
     positions = account["positions"]
     pending = account.get("pending")
+    # Persisted pending orders are untrusted state. Corrupt targets must not fill.
+    if pending is not None:
+        pending_codes = pending.get("codes") if isinstance(pending, dict) else None
+        signal_date = pending.get("signal_asof") if isinstance(pending, dict) else None
+        try:
+            valid_signal_date = (bool(signal_date) and
+                                 pd.Timestamp(signal_date) <= pd.Timestamp(asof))
+        except (TypeError, ValueError, OverflowError):
+            valid_signal_date = False
+        if (not isinstance(pending_codes, list) or len(pending_codes) != 10 or
+                len(set(pending_codes)) != 10 or
+                not all(isinstance(c, str) and permitted(c) for c in pending_codes) or
+                not valid_signal_date or not signal(signal_date)):
+            raise RuntimeError("Invalid persisted pending target; refusing paper execution")
     needed = set(positions)
     if pending is not None:
         needed.update(pending.get("codes", []))
     raw_quotes, quote_errors = fetch_raw_quotes(needed, asof)
     trades, blocked, stale_marks = [], [], []
+
+    # Expire a stale target before attempting any assumed fill.
+    if pending and (pd.Timestamp(asof) - pd.Timestamp(pending["signal_asof"])).days > 7:
+        blocked.append({"action": "rebalance", "reason": "stale pending signal >7 calendar days"})
+        pending = None
 
     # Pending targets are decided at an earlier month-end close. Never
     # execute a signal at an open which occurred before that signal.
@@ -180,11 +279,21 @@ def process():
         for code in list(positions):
             if code in desired:
                 continue
+            # A-share T+1: shares acquired today cannot be sold today.
+            # Unknown entry dates are not assumed to be settled.
+            if not settled_for_sale(positions[code], asof):
+                blocked.append({"code": code, "action": "sell",
+                                "reason": "T+1/unknown acquisition date"})
+                continue
             quote = raw_quotes.get(code)
             if not eligible_open(code, quote, asof, "sell"):
                 blocked.append({"code": code, "action": "sell", "reason": "suspension/limit/no raw quote"})
                 continue
             shares = int(positions[code]["shares"])
+            if shares > volume_capped_lot(quote):
+                blocked.append({"code": code, "action": "sell",
+                                "reason": "position exceeds 1% daily-volume cap; partial sale not modeled"})
+                continue
             gross = shares * quote["open"]
             fee = gross * SELL_FEE
             account["cash_cny"] += gross - fee
@@ -203,6 +312,7 @@ def process():
                 continue
             budget = min(account["cash_cny"], nav_open * 0.1)
             shares = math.floor(budget / (quote["open"] * (1 + BUY_FEE)) / LOT) * LOT
+            shares = min(shares, volume_capped_lot(quote))
             if shares < LOT:
                 blocked.append({"code": code, "action": "buy", "reason": "no 100-share lot funding"})
                 continue
@@ -232,7 +342,7 @@ def process():
         nav_close += int(pos["shares"]) * float(pos.get("last_close", 0.0))
 
     # New month-end target is only queued, not filled on the same day.
-    if monthly_signal(asof):
+    if signal(asof):
         pending = {"signal_asof": asof, "codes": targets}
 
     account["pending"] = pending
@@ -272,4 +382,17 @@ def process():
 
 
 if __name__ == "__main__":
-    process()
+    from paper_calendar_provider_v1 import load_decision_window
+    gate = json.loads(DAILY.read_text(encoding="utf-8")) if DAILY.exists() else {}
+    if gate.get("status") != "PASS_RESEARCH_REFRESH":
+        process()  # existing gate rejects before any execution
+    else:
+        try:
+            sessions = load_decision_window(gate["asof"])
+        except Exception as exc:
+            STATE.mkdir(parents=True, exist_ok=True)
+            store_json(AUDIT, {"status": "BLOCKED_BY_CALENDAR", "asof": gate.get("asof"),
+                               "reason": str(exc)[:240], "hypothetical_fills": False,
+                               "real_orders": False})
+        else:
+            process(calendar_sessions=sessions)

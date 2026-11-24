@@ -157,7 +157,7 @@ def monthly_signal(date_string):
     return (d + pd.offsets.BDay(1)).month != d.month
 
 
-def process():
+def process(calendar_sessions=None):
     STATE.mkdir(parents=True, exist_ok=True)
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     gate = (json.loads(DAILY.read_text(encoding="utf-8"))
@@ -182,6 +182,22 @@ def process():
             "real_orders": False, "hypothetical_fills": False,
         })
         return
+
+    # Production entry point requires a provider calendar; tests can inject fixtures.
+    # Fail closed before any account mutation if calendar coverage is unavailable.
+    if calendar_sessions is not None:
+        from paper_calendar_provider_v1 import decision_from_sessions
+        def signal(day):
+            return decision_from_sessions(day, calendar_sessions)
+        try:
+            signal(asof)
+        except (ValueError, TypeError) as exc:
+            store_json(AUDIT, {"status": "BLOCKED_BY_CALENDAR", "asof": asof,
+                               "reason": str(exc), "hypothetical_fills": False,
+                               "real_orders": False})
+            return
+    else:
+        signal = monthly_signal  # legacy offline test path only
 
     target_file = STATE / "latest_target_candidates.csv"
     candidates = pd.read_csv(target_file, dtype={"code": str})
@@ -244,7 +260,7 @@ def process():
         if (not isinstance(pending_codes, list) or len(pending_codes) != 10 or
                 len(set(pending_codes)) != 10 or
                 not all(isinstance(c, str) and permitted(c) for c in pending_codes) or
-                not valid_signal_date or not monthly_signal(signal_date)):
+                not valid_signal_date or not signal(signal_date)):
             raise RuntimeError("Invalid persisted pending target; refusing paper execution")
     needed = set(positions)
     if pending is not None:
@@ -335,7 +351,7 @@ def process():
         nav_close += int(pos["shares"]) * float(pos.get("last_close", 0.0))
 
     # New month-end target is only queued, not filled on the same day.
-    if monthly_signal(asof):
+    if signal(asof):
         pending = {"signal_asof": asof, "codes": targets}
 
     account["pending"] = pending
@@ -375,4 +391,17 @@ def process():
 
 
 if __name__ == "__main__":
-    process()
+    from paper_calendar_provider_v1 import load_decision_window
+    gate = json.loads(DAILY.read_text(encoding="utf-8")) if DAILY.exists() else {}
+    if gate.get("status") != "PASS_RESEARCH_REFRESH":
+        process()  # existing gate rejects before any execution
+    else:
+        try:
+            sessions = load_decision_window(gate["asof"])
+        except Exception as exc:
+            STATE.mkdir(parents=True, exist_ok=True)
+            store_json(AUDIT, {"status": "BLOCKED_BY_CALENDAR", "asof": gate.get("asof"),
+                               "reason": str(exc)[:240], "hypothetical_fills": False,
+                               "real_orders": False})
+        else:
+            process(calendar_sessions=sessions)

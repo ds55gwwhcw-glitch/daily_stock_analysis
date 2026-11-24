@@ -35,3 +35,24 @@ jobs:
               print("IMPORT_OK", name)
           print("IMPORT_COMPATIBILITY_ONLY; execution and data not verified")
           PY
+      - name: Exercise trading calendar against synthetic holiday fixture
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from datetime import date
+          from rqalpha.const import TRADING_CALENDAR_TYPE
+          from rqalpha.data.trading_dates_mixin import TradingDatesMixin
+          class Fixture:
+              def get_trading_calendars(self):
+                  return {TRADING_CALENDAR_TYPE.CN_STOCK: pd.DatetimeIndex(
+                      ["2026-09-29", "2026-09-30", "2026-10-09", "2026-10-12"])}
+          calendar = TradingDatesMixin(Fixture())
+          assert calendar.is_trading_date(date(2026, 9, 30))
+          assert not calendar.is_trading_date(date(2026, 10, 1))
+          assert calendar.get_next_trading_date("2026-09-30") == pd.Timestamp("2026-10-09")
+          assert calendar.get_previous_trading_date("2026-10-09") == pd.Timestamp("2026-09-30")
+          assert len(calendar.get_trading_dates("2026-09-30", "2026-10-09")) == 2
+          # Document the library's boundary clamping; never treat it as future-session evidence.
+          assert calendar.get_next_trading_date("2026-10-12") == pd.Timestamp("2026-10-12")
+          print("SYNTHETIC_CALENDAR_OK; real exchange calendar not verified")
+          PY

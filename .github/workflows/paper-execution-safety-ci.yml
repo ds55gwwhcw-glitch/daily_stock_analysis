@@ -10,6 +10,8 @@ on:
       - quant_research/scripts/paper_shadow_account_v1.py
       - quant_research/tests/test_paper_shadow_account_v1.py
       - quant_research/tests/test_paper_volume_cap_v1.py
+      - quant_research/scripts/paper_corporate_action_guard_v1.py
+      - quant_research/tests/test_paper_corporate_action_guard_v1.py
       - .github/workflows/paper-execution-safety-ci.yml
   workflow_dispatch:
 
@@ -29,4 +31,4 @@ jobs:
       - name: Install offline test dependencies
         run: python -m pip install 'pandas>=2.2' 'numpy>=1.26' 'pytest>=8'
       - name: Verify calendar, T+1, execution guards and idempotence
-        run: python -m pytest -q quant_research/tests/test_paper_exchange_calendar_v1.py quant_research/tests/test_paper_shadow_account_v1.py quant_research/tests/test_paper_volume_cap_v1.py
+        run: python -m pytest -q quant_research/tests/test_paper_exchange_calendar_v1.py quant_research/tests/test_paper_shadow_account_v1.py quant_research/tests/test_paper_volume_cap_v1.py quant_research/tests/test_paper_corporate_action_guard_v1.py

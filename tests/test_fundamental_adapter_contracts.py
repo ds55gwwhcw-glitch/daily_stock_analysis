@@ -113,7 +113,12 @@ def test_installed_akshare_receives_valid_parameters_at_http_boundary(monkeypatc
         calls.append((url, dict(kwargs.get("params", {}))))
         raise RuntimeError("offline transport boundary")
 
+    # AkShare may call requests.get or a Session method depending on version.
+    # Intercept both at the HTTP boundary without mocking the AkShare APIs.
     monkeypatch.setattr(requests, "get", stop_at_http)
+    def stop_session_request(self, method, url, **kwargs):
+        return stop_at_http(url, **kwargs)
+    monkeypatch.setattr(requests.sessions.Session, "request", stop_session_request)
     for name in (
         "stock_financial_abstract", "stock_financial_analysis_indicator",
         "stock_fhps_detail_em", "stock_history_dividend_detail", "stock_dividend_cninfo",

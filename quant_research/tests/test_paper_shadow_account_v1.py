@@ -1,11 +1,20 @@
 """No-broker virtual account safeguards, offline deterministic tests."""
 import importlib.util
 import json
+import sys
+import pytest
 from pathlib import Path
 
 import pandas as pd
 
 PATH = Path(__file__).resolve().parents[1] / "scripts" / "paper_shadow_account_v1.py"
+sys.path.insert(0, str(PATH.parent))
+# Explicit synthetic session fixture; never used as live exchange evidence.
+SESSIONS = ["2026-10-29", "2026-10-30", "2026-11-02", "2026-11-03",
+            "2026-11-05", "2026-11-06", "2026-11-10", "2026-11-11",
+            "2026-11-12", "2026-11-13", "2026-11-27", "2026-11-30",
+            "2026-12-01", "2026-12-02", "2026-12-09", "2026-12-10",
+            "2026-12-11"]
 spec = importlib.util.spec_from_file_location("paper_shadow", PATH)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
@@ -16,8 +25,8 @@ def test_limit_guards_and_monthly_frequency():
     assert mod.permitted("sz.300750")
     assert not mod.permitted("sh.688001")
     assert not mod.permitted("bj.920001")
-    assert mod.monthly_signal("2026-11-30")
-    assert not mod.monthly_signal("2026-11-05")
+    assert mod.monthly_signal("2026-11-30", SESSIONS)
+    assert not mod.monthly_signal("2026-11-05", SESSIONS)
     quote = {"last_quote_day": "2026-11-02", "open": 10.1,
              "close": 10.2, "preclose": 10.0, "volume": 10000,
              "tradestatus": "1", "isST": "0"}
@@ -48,7 +57,7 @@ def test_first_paper_day_only_initializes_cash(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
     monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
     monkeypatch.setattr(mod, "fetch_raw_quotes", lambda codes, asof: ({}, {}))
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     obj = json.loads((state / "account.json").read_text())
     assert obj["cash_cny"] == 1_000_000
     assert obj["positions"] == {}
@@ -82,7 +91,7 @@ def test_prev_month_signal_filled_only_next_session(tmp_path, monkeypatch):
          "preclose": 10, "volume": 10000, "tradestatus": "1", "isST": "0"}
     monkeypatch.setattr(mod, "fetch_raw_quotes",
                         lambda req, asof: ({x: q for x in req}, {}))
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     account = json.loads((state / "account.json").read_text())
     assert len(account["positions"]) == 10
     assert account["pending"] is None
@@ -114,7 +123,7 @@ def test_non_month_end_candidate_does_not_create_trade(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
     monkeypatch.setattr(mod, "fetch_raw_quotes", lambda codes, asof: ({}, {}))
 
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     first = json.loads((state / "account.json").read_text())
     assert first["pending"] is None
     assert first["positions"] == {}
@@ -123,7 +132,7 @@ def test_non_month_end_candidate_does_not_create_trade(tmp_path, monkeypatch):
     assert len(pd.read_csv(state / "virtual_equity.csv")) == 1
 
     # Re-running the same date must not append duplicate account entries.
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     assert len(pd.read_csv(state / "virtual_equity.csv")) == 1
 
 
@@ -144,7 +153,7 @@ def test_blocked_daily_gate_never_creates_orders(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
     monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
 
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     audit = json.loads((state / "virtual_account_status.json").read_text())
     assert audit["status"] == "BLOCKED_BY_FRESHNESS_OR_SIGNAL"
     assert audit["hypothetical_fills"] is False
@@ -178,7 +187,7 @@ def test_pending_month_end_signal_not_filled_on_signal_day(tmp_path, monkeypatch
     monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
     monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
     monkeypatch.setattr(mod, "fetch_raw_quotes", lambda codes, asof: ({}, {}))
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     account = json.loads((state / "account.json").read_text())
     assert account["pending"] == {
         "signal_asof": "2026-11-30", "codes": codes
@@ -274,7 +283,7 @@ def test_stale_pending_target_expires_before_any_fill(tmp_path, monkeypatch):
              "tradestatus": "1", "isST": "0"}
     monkeypatch.setattr(mod, "fetch_raw_quotes",
                         lambda req, asof: ({code: quote for code in req}, {}))
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     account = json.loads((state / "account.json").read_text())
     audit = json.loads((state / "virtual_account_status.json").read_text())
     assert account["pending"] is None
@@ -333,7 +342,7 @@ def test_mismatched_signal_date_blocks_all_paper_activity(tmp_path, monkeypatch)
     monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
     monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
 
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     audit = json.loads((state / "virtual_account_status.json").read_text())
     assert audit["status"] == "BLOCKED_BY_FRESHNESS_OR_SIGNAL"
     assert audit["asof"] == "2026-11-11"
@@ -446,7 +455,7 @@ def test_blocked_gate_preserves_existing_pending_account(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
     monkeypatch.setattr(mod, "fetch_raw_quotes",
                         lambda *_: (_ for _ in ()).throw(AssertionError("no quote fetch")))
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     assert json.loads(account_path.read_text()) == original
     assert not (state / "virtual_trades.csv").exists()
     assert not (state / "virtual_equity.csv").exists()
@@ -469,7 +478,7 @@ def test_blocked_gate_is_idempotent_and_never_creates_ledger(tmp_path, monkeypat
     monkeypatch.setattr(mod, "EQUITY", state / "virtual_equity.csv")
     monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
     for _ in range(2):
-        mod.process()
+        mod.process(calendar_sessions=SESSIONS)
         audit = json.loads((state / "virtual_account_status.json").read_text())
         assert audit["status"] == "BLOCKED_BY_FRESHNESS_OR_SIGNAL"
         assert audit["hypothetical_fills"] is False
@@ -503,7 +512,7 @@ def test_blocked_gate_preserves_existing_paper_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "EQUITY", equity)
     monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
     for _ in range(2):
-        mod.process()
+        mod.process(calendar_sessions=SESSIONS)
     assert account.read_bytes() == original_account
     assert equity.read_bytes() == original_equity
     assert not (state / "virtual_trades.csv").exists()
@@ -512,9 +521,11 @@ def test_blocked_gate_preserves_existing_paper_ledger(tmp_path, monkeypatch):
 
 def test_weekend_month_end_never_queues_rebalance():
     """Calendar month-end falling on a weekend is not a trading session."""
-    assert not mod.monthly_signal("2024-11-30")  # Saturday
-    assert not mod.monthly_signal("2024-03-31")  # Sunday
-    assert mod.monthly_signal("2026-11-30")  # Weekday only; exchange holiday unverified
+    with pytest.raises(ValueError):
+        mod.monthly_signal("2024-11-30", SESSIONS)
+    with pytest.raises(ValueError):
+        mod.monthly_signal("2024-03-31", SESSIONS)
+    assert mod.monthly_signal("2026-11-30", SESSIONS)  # explicit synthetic month-end session
 
 
 def test_no_quote_or_suspension_never_assumes_a_fill(tmp_path, monkeypatch):
@@ -548,7 +559,7 @@ def test_no_quote_or_suspension_never_assumes_a_fill(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "fetch_raw_quotes",
                         lambda req, asof: ({codes[0]: suspended},
                                            {c: "quote_missing" for c in codes[1:]}))
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     account = json.loads((state / "account.json").read_text())
     audit = json.loads((state / "virtual_account_status.json").read_text())
     assert account["cash_cny"] == 1_000_000
@@ -561,9 +572,11 @@ def test_no_quote_or_suspension_never_assumes_a_fill(tmp_path, monkeypatch):
 
 def test_weekend_cannot_generate_month_end_target():
     """A non-session Saturday/Sunday must never enqueue a month-end target."""
-    assert not mod.monthly_signal("2026-10-31")
-    assert not mod.monthly_signal("2026-11-01")
-    assert mod.monthly_signal("2026-11-30")
+    with pytest.raises(ValueError):
+        mod.monthly_signal("2026-10-31", SESSIONS)
+    with pytest.raises(ValueError):
+        mod.monthly_signal("2026-11-01", SESSIONS)
+    assert mod.monthly_signal("2026-11-30", SESSIONS)
 
 
 def test_open_limit_and_suspension_guards_both_sides():
@@ -623,7 +636,7 @@ def test_corrupt_pending_target_never_fetches_or_fills(tmp_path, monkeypatch):
                     "pending": pending}
         (state / "account.json").write_text(json.dumps(original))
         with pytest.raises(RuntimeError, match="Invalid persisted pending target"):
-            mod.process()
+            mod.process(calendar_sessions=SESSIONS)
         assert json.loads((state / "account.json").read_text()) == original
         assert not (state / "virtual_trades.csv").exists()
         assert not (state / "virtual_equity.csv").exists()
@@ -664,9 +677,11 @@ def test_volume_participation_cap_is_conservative():
 
 def test_weekend_cannot_create_month_end_signal():
     """Never queue a monthly rebalance from a weekend-only date."""
-    assert not mod.monthly_signal("2026-10-31")
-    assert not mod.monthly_signal("2026-11-01")
-    assert mod.monthly_signal("2026-11-30")
+    with pytest.raises(ValueError):
+        mod.monthly_signal("2026-10-31", SESSIONS)
+    with pytest.raises(ValueError):
+        mod.monthly_signal("2026-11-01", SESSIONS)
+    assert mod.monthly_signal("2026-11-30", SESSIONS)
 
 
 def test_t_plus_one_rejects_same_day_future_and_unknown_acquisitions():
@@ -680,12 +695,11 @@ def test_t_plus_one_rejects_same_day_future_and_unknown_acquisitions():
 
 
 def test_weekday_month_end_does_not_approve_a_holiday():
-    """Document the known calendar limitation rather than assuming proof."""
-    # The current implementation is only a weekday approximation; this
-    # regression test intentionally asserts weekends are rejected, without
-    # claiming an exchange-holiday calendar has been verified.
-    assert not mod.monthly_signal("2027-01-31")
-    assert not mod.monthly_signal("2027-02-28")
+    """Non-session dates cannot trigger a month-end signal."""
+    with pytest.raises(ValueError):
+        mod.monthly_signal("2027-01-31", SESSIONS)
+    with pytest.raises(ValueError):
+        mod.monthly_signal("2027-02-28", SESSIONS)
 
 
 def test_pending_rebalance_cannot_sell_same_day_position(tmp_path, monkeypatch):
@@ -721,7 +735,7 @@ def test_pending_rebalance_cannot_sell_same_day_position(tmp_path, monkeypatch):
          "tradestatus": "1", "isST": "0"}
     monkeypatch.setattr(mod, "fetch_raw_quotes",
                         lambda req, asof: ({code: q for code in req}, {}))
-    mod.process()
+    mod.process(calendar_sessions=SESSIONS)
     account = json.loads((state / "account.json").read_text())
     audit = json.loads((state / "virtual_account_status.json").read_text())
     assert existing in account["positions"]
@@ -762,7 +776,7 @@ def test_corrupt_persisted_cash_fails_closed_before_quotes(tmp_path, monkeypatch
                             lambda *_: (_ for _ in ()).throw(
                                 AssertionError("quotes must not be fetched")))
         with pytest.raises(RuntimeError, match="Invalid persisted paper cash"):
-            mod.process()
+            mod.process(calendar_sessions=SESSIONS)
         assert not (state / "virtual_trades.csv").exists()
         assert not (state / "virtual_equity.csv").exists()
 
@@ -804,9 +818,27 @@ def test_paper_gate_rejects_incomplete_or_nonterminal_pass(tmp_path, monkeypatch
                 "processed_codes": 4605, "error_codes": 0}
         gate.update(overrides)
         daily.write_text(json.dumps(gate))
-        mod.process()
+        mod.process(calendar_sessions=SESSIONS)
         audit = json.loads((state / "virtual_account_status.json").read_text())
         assert audit["status"] == "BLOCKED_BY_FRESHNESS_OR_SIGNAL"
         assert audit["hypothetical_fills"] is False
         assert not (state / "account.json").exists()
         assert not (state / "virtual_trades.csv").exists()
+
+
+def test_missing_calendar_blocks_before_account_mutation(tmp_path, monkeypatch):
+    state = tmp_path / "paper"
+    state.mkdir()
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"status": "PASS_RESEARCH_REFRESH", "asof": "2026-11-30",
+        "terminal": True, "eligible_codes": 10, "processed_codes": 10, "error_codes": 0}))
+    (state / "latest_status.json").write_text(json.dumps({
+        "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY", "signal_asof_date": "2026-11-30"}))
+    monkeypatch.setattr(mod, "STATE", state)
+    monkeypatch.setattr(mod, "DAILY", daily)
+    monkeypatch.setattr(mod, "ACCOUNT", state / "account.json")
+    monkeypatch.setattr(mod, "AUDIT", state / "virtual_account_status.json")
+    for sessions in (None, [], ["2026-11-30"], ["2026-11-27", "2026-12-01"]):
+        mod.process(calendar_sessions=sessions)
+        assert not mod.ACCOUNT.exists()
+        assert json.loads(mod.AUDIT.read_text())["status"] == "BLOCKED_BY_CALENDAR"

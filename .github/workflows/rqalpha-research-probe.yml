@@ -152,3 +152,28 @@ jobs:
           print(json.dumps({"test_only": True, "shares": shares, "cash": str(cash),
               "fee": str(fee), "equity": str(equity), "matching": result}))
           PY
+      - name: Historical round-trip matching and reconciliation
+        timeout-minutes: 4
+        run: |
+          PYTHONPATH=quant_research/scripts python - <<'PY'
+          import json
+          import baostock as bs
+          from paper_rqalpha_match_probe_v1 import round_trip_probe
+          from paper_calendar_provider_v1 import fetch_sessions
+          sessions = fetch_sessions("2026-11-20", "2026-11-23")
+          assert bs.login().error_code == "0"
+          try:
+              r = bs.query_history_k_data_plus("sh.600000",
+                  "date,open,close,preclose,volume,adjustflag,tradestatus,isST",
+                  start_date="2026-11-20",end_date="2026-11-23",frequency="d",adjustflag="3")
+              rows = []
+              while r.error_code == "0" and r.next():
+                  q = dict(zip(r.fields,r.get_row_data()))
+                  q["last_quote_day"] = q["date"]
+                  rows.append(q)
+              assert r.error_code == "0" and len(rows) == 2
+              assert [q["date"] for q in rows] == sessions
+              print(json.dumps(round_trip_probe(*rows,sessions),ensure_ascii=False))
+          finally:
+              bs.logout()
+          PY

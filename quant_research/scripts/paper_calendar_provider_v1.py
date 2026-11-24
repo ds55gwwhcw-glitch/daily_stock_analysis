@@ -33,3 +33,17 @@ def sessions_from_rows(rows, first, last):
     sessions = [r["calendar_date"] for r in rows if r["is_trading_day"] == "1"]
     validated_sessions(sessions)
     return sessions
+
+
+def decision_from_sessions(asof, sessions):
+    """No weekday fallback. Require the current session and a later session."""
+    if asof not in sessions:
+        raise ValueError("Current date is not a verified exchange session")
+    return month_end_signal(asof, sessions)
+
+
+def load_decision_window(asof, fetcher=fetch_sessions):
+    """Cover prior month signals and next session with bounded provider request."""
+    day = date.fromisoformat(asof)
+    return fetcher((day-timedelta(days=45)).isoformat(),
+                   (day+timedelta(days=14)).isoformat())

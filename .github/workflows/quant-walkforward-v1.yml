@@ -59,7 +59,7 @@ jobs:
         if: env.MODE == 'research'
         run: python quant_research/scripts/paper_shadow_account_v1.py
       - name: Commit lightweight research signal history
-        if: env.MODE == 'research'
+        if: env.MODE == 'research' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'

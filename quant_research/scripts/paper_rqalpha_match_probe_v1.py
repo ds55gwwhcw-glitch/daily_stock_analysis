@@ -26,6 +26,7 @@ def match_probe(raw_open, daily_volume, side='buy', asof='2026-11-23'):
              config=NS(base=NS(frequency="1d", round_price=False,
                               partial_fill_on_insufficient_cash=False)),
              event_bus=NS(publish_event=events.append),
+             price_board=NS(get_last_price=lambda *a: raw_open),
              data_proxy=NS(get_active_instrument=lambda *a: instrument,
                            instrument_not_none=lambda *a: instrument,
                            instrument=lambda *a: instrument,

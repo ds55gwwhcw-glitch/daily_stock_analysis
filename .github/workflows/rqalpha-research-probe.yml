@@ -56,3 +56,48 @@ jobs:
           assert calendar.get_next_trading_date("2026-10-12") == pd.Timestamp("2026-10-12")
           print("SYNTHETIC_CALENDAR_OK; real exchange calendar not verified")
           PY
+      - name: Fetch actual BaoStock sessions and raw quote in read-only mode
+        timeout-minutes: 4
+        run: |
+          python -m pip install baostock
+          python - <<'PY'
+          import baostock as bs
+          import pandas as pd
+          from rqalpha.const import TRADING_CALENDAR_TYPE
+          from rqalpha.data.trading_dates_mixin import TradingDatesMixin
+          def rows(result):
+              if result.error_code != "0":
+                  raise RuntimeError(result.error_msg)
+              data = []
+              while result.next():
+                  data.append(result.get_row_data())
+              if result.error_code != "0":
+                  raise RuntimeError(result.error_msg)
+              return pd.DataFrame(data, columns=result.fields)
+          login = bs.login()
+          if login.error_code != "0":
+              raise RuntimeError(login.error_msg)
+          try:
+              days = rows(bs.query_trade_dates(start_date="2026-09-01", end_date="2026-11-23"))
+              assert len(days) == 84, "Incomplete calendar coverage"
+              assert days.calendar_date.is_unique
+              assert list(days.calendar_date) == pd.date_range("2026-09-01", "2026-11-23").strftime("%Y-%m-%d").tolist()
+              assert set(days.is_trading_day) <= {"0", "1"}
+              sessions = pd.DatetimeIndex(days.loc[days.is_trading_day == "1", "calendar_date"])
+              class Source:
+                  def get_trading_calendars(self):
+                      return {TRADING_CALENDAR_TYPE.CN_STOCK: sessions}
+              calendar = TradingDatesMixin(Source())
+              assert pd.Timestamp("2026-11-23") in sessions
+              assert calendar.get_next_trading_date("2026-09-30") > pd.Timestamp("2026-10-01")
+              q = rows(bs.query_history_k_data_plus("sh.600000", "date,code,open,close,preclose,volume,adjustflag,tradestatus,isST", start_date="2026-11-23", end_date="2026-11-23", frequency="d", adjustflag="3"))
+              assert len(q) == 1 and q.iloc[0]["date"] == "2026-11-23"
+              assert q.iloc[0]["adjustflag"] == "3"
+              for field in ("open", "close", "preclose", "volume"):
+                  assert float(q.iloc[0][field]) > 0
+              print("BAOSTOCK_SESSION_COUNT", len(sessions))
+              print("RAW_QUOTE", q.to_json(orient="records"))
+              print("REAL_PROVIDER_PROBE_ONLY; exchange cross-check and execution not verified")
+          finally:
+              bs.logout()
+          PY

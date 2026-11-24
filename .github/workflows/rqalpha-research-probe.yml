@@ -2,7 +2,7 @@ name: RQAlpha isolated compatibility probe
 on:
   push:
     branches: [feature/paper-execution-safety-v1]
-    paths: ['.github/workflows/rqalpha-research-probe.yml']
+    paths: ['.github/workflows/rqalpha-research-probe.yml', 'quant_research/scripts/paper_calendar_provider_v1.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -101,3 +102,29 @@ jobs:
           finally:
               bs.logout()
           PY
+      - name: Verify calendar provider and isolated ledger end-to-end
+        timeout-minutes: 6
+        run: |
+          python -m pip install pytest pyarrow
+          PYTHONPATH=quant_research/scripts python - <<'PY'
+          from paper_calendar_provider_v1 import fetch_sessions, sessions_from_rows
+          from paper_exchange_calendar_v1 import month_end_signal
+          from datetime import date
+          days = fetch_sessions("2026-09-01", "2026-11-23")
+          assert month_end_signal("2026-09-30", days)
+          assert not month_end_signal("2026-09-29", days)
+          try:
+              month_end_signal("2026-11-23", days)
+          except ValueError:
+              pass
+          else:
+              raise AssertionError("Truncated calendar accepted")
+          try:
+              sessions_from_rows([], date(2026,9,1), date(2026,9,2))
+          except ValueError:
+              pass
+          else:
+              raise AssertionError("Incomplete calendar accepted")
+          print("PROVIDER_OK")
+          PY
+          python -m pytest -q quant_research/tests/test_paper_exchange_calendar_v1.py quant_research/tests/test_paper_shadow_account_v1.py quant_research/tests/test_paper_volume_cap_v1.py

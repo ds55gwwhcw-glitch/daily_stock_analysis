@@ -1,9 +1,9 @@
 {
   "status": "CANDIDATES_PUBLISHED_RESEARCH_ONLY",
-  "generated_at_china": "2026-11-27T07:05:48.452018+08:00",
-  "signal_asof_date": "2026-11-26",
+  "generated_at_china": "2026-11-28T06:34:48.494543+08:00",
+  "signal_asof_date": "2026-11-27",
   "daily_data_gate": "PASS_RESEARCH_REFRESH",
-  "daily_data_asof": "2026-11-26",
+  "daily_data_asof": "2026-11-27",
   "model_oos_periods": 45,
   "candidate_count": 10,
   "adjusted_price_series": true,
